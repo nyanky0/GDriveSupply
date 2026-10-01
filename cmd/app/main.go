@@ -147,9 +147,9 @@ func main() {
 	// Start HTTP Server
 	go func() {
 		log.Printf("Web Dashboard aktif di: %s\n", webURL)
-		// Auto open browser on initial start
+		// Auto open browser on initial start without flashing CMD
 		time.Sleep(600 * time.Millisecond)
-		_ = exec.Command("cmd", "/c", "start", webURL).Start()
+		_ = sysutil.OpenURL(webURL)
 
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("HTTP server error: %v", err)

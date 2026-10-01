@@ -4,6 +4,8 @@ import (
 	"os/exec"
 	"syscall"
 	"unsafe"
+
+	"gdrive-supply/internal/sysutil"
 )
 
 var (
@@ -133,14 +135,14 @@ func StartTray(webURL string, onExit func(withWinFsp bool)) {
 				return 0
 			} else if lParam == WM_LBUTTONDBLCLK {
 				// Open web dashboard on double-click
-				_ = exec.Command("cmd", "/c", "start", webURL).Start()
+				_ = sysutil.OpenURL(webURL)
 				return 0
 			}
 
 		case WM_COMMAND:
 			switch wParam {
 			case ID_OPEN_WEB:
-				_ = exec.Command("cmd", "/c", "start", webURL).Start()
+				_ = sysutil.OpenURL(webURL)
 			case ID_OPEN_EXPLORER:
 				_ = exec.Command("explorer.exe").Start()
 			case ID_EXIT_APP_ONLY:

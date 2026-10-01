@@ -2,7 +2,6 @@ package sysutil
 
 import (
 	"os"
-	"os/exec"
 	"syscall"
 	"unsafe"
 )
@@ -25,9 +24,9 @@ func EnsureSingleInstance(mutexName string, webURL string) uintptr {
 
 	// Check if already exists
 	if errno, ok := err.(syscall.Errno); ok && errno == ERROR_ALREADY_EXISTS {
-		// Open the web browser to the already-running instance
+		// Open the web browser to the already-running instance without popping a CMD window
 		if webURL != "" {
-			_ = exec.Command("cmd", "/c", "start", webURL).Start()
+			_ = OpenURL(webURL)
 		}
 		os.Exit(0)
 	}

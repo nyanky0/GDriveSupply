@@ -38,3 +38,13 @@ func OpenDriveInExplorer(driveLetter string) error {
 	cmd := exec.Command("explorer.exe", target)
 	return cmd.Start()
 }
+
+// OpenURL opens the given URL in the default browser without popping up any CMD window
+func OpenURL(url string) error {
+	cmd := exec.Command("cmd", "/c", "start", "", url)
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		HideWindow:    true,
+		CreationFlags: 0x08000000, // CREATE_NO_WINDOW
+	}
+	return cmd.Start()
+}
