@@ -11,6 +11,7 @@ import { AntiBannedModal } from './components/AntiBannedModal';
 import { LockScreen } from './components/LockScreen';
 import { SecuritySettingsModal } from './components/SecuritySettingsModal';
 import { LegalModal } from './components/LegalModal';
+import { LogsModal } from './components/LogsModal';
 import { HardDrive, Plus, BookOpen, AlertCircle, CheckCircle2 } from 'lucide-react';
 import type { DriveAccount, SystemStatus, GoogleCredential, AuthStatus } from './types';
 
@@ -89,6 +90,7 @@ export function App() {
   const [isAntiBannedOpen, setIsAntiBannedOpen] = useState(false);
   const [isSecurityModalOpen, setIsSecurityModalOpen] = useState(false);
   const [isLegalModalOpen, setIsLegalModalOpen] = useState(false);
+  const [isLogsModalOpen, setIsLogsModalOpen] = useState(false);
 
   // Toast Notification
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
@@ -302,6 +304,7 @@ export function App() {
         onOpenAntiBanned={() => setIsAntiBannedOpen(true)}
         onOpenSecurity={() => setIsSecurityModalOpen(true)}
         onOpenLegal={() => setIsLegalModalOpen(true)}
+        onOpenLogs={() => setIsLogsModalOpen(true)}
         onRefresh={() => {
           setIsRefreshing(true);
           fetchStatus();
@@ -481,6 +484,12 @@ export function App() {
       <LegalModal
         isOpen={isLegalModalOpen}
         onClose={() => setIsLegalModalOpen(false)}
+      />
+
+      <LogsModal
+        isOpen={isLogsModalOpen}
+        onClose={() => setIsLogsModalOpen(false)}
+        onShowToast={showToast}
       />
     </div>
   );

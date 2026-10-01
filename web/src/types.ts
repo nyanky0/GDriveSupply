@@ -37,3 +37,12 @@ export interface AuthStatus {
   remainingAttempts: number;
 }
 
+export interface LogEntry {
+  id: number;
+  timestamp: string;
+  level: 'INFO' | 'WARN' | 'ERROR' | 'DEBUG';
+  module: string;
+  message: string;
+}
+
+

@@ -15,6 +15,7 @@ import (
 
 	"gdrive-supply/internal/api"
 	"gdrive-supply/internal/config"
+	"gdrive-supply/internal/logger"
 	"gdrive-supply/internal/mount"
 	"gdrive-supply/internal/sysutil"
 	"gdrive-supply/internal/tray"
@@ -22,20 +23,26 @@ import (
 )
 
 func main() {
+	// Initialize central high-capacity logging engine
+	l := logger.InitLogger()
+	l.Infof("CORE", "Memulai GDrive Supply (v2.2 Production Edition)...")
+	l.Infof("CORE", "File log tersimpan di: %s", l.GetLogFilePath())
+
 	serverAddr := "127.0.0.1:4040"
 	webURL := fmt.Sprintf("http://%s", serverAddr)
 
 	// Ensure only 1 instance of GDriveSupply runs
 	sysutil.EnsureSingleInstance("Local\\GDriveSupply_SingleInstance_Mutex", webURL)
 
-	log.Println("========================================================")
-	log.Println(" GDrive Supply - Multi-Account Local Drive Service      ")
-	log.Println("========================================================")
+	l.Infof("CORE", "========================================================")
+	l.Infof("CORE", " GDrive Supply - Multi-Account Local Drive Service      ")
+	l.Infof("CORE", "========================================================")
 
 	// Check WinFsp on startup
 	if !mount.CheckWinFspInstalled() {
-		log.Println("⚠️ PERINGATAN: Driver WinFsp belum terpasang.")
-		log.Println("Kunjungi https://winfsp.dev/rel/ atau gunakan panduan di Web Dashboard.")
+		l.Warnf("CORE", "PERINGATAN: Driver WinFsp belum terpasang. Partisi drive tidak dapat dimount tanpa WinFsp.")
+	} else {
+		l.Infof("CORE", "Driver WinFsp terdeteksi aktif dan siap digunakan.")
 	}
 
 	store := config.GetStore()

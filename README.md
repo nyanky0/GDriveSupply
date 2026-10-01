@@ -89,6 +89,11 @@ Setiap akun memiliki partisi drive tersendiri dengan kapasitas penuh (misalnya 5
     - Client Secret dan Refresh Token dienkripsi menggunakan *Windows Data Protection API* (DPAPI). Token yang tersimpan di `%APPDATA%\GDriveSupply\config.json` tidak dapat dibaca oleh komputer atau pengguna Windows lain.
     - Dilengkapi dokumen kepatuhan resmi [PRIVACY.md](PRIVACY.md) dan [TERMS.md](TERMS.md) sesuai *Google API Services User Data Policy*.
 
+12. **High-Capacity Diagnostic Logging Engine & Live Terminal Feed**
+    - Sistem pencatatan log performa tinggi berkapasitas besar (ring buffer **5.000 baris** di memori + file log persisten di `%APPDATA%\GDriveSupply\logs\app.log`).
+    - Menangkap langsung *stdout* & *stderr* dari rclone VFS, proses mount WinFsp, supervisor, dan request API secara granular.
+    - Dilengkapi **Live Terminal Modal** di Web Dashboard: filter level (ALL / ERROR / WARN / INFO / DEBUG), pencarian kata kunci, pause/play live-tail, 1-klik salin ke clipboard, dan tombol unduh file `.log` mentah untuk kemudahan pelaporan bug/feedback.
+
 ---
 
 ## 🛠️ Prasyarat Sistem

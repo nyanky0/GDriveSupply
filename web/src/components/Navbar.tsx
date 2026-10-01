@@ -1,5 +1,5 @@
 import React from 'react';
-import { BookOpen, KeyRound, Plus, RefreshCw, Power, ShieldCheck, Sun, Moon, Laptop, Shield, FileText } from 'lucide-react';
+import { BookOpen, KeyRound, Plus, RefreshCw, Power, ShieldCheck, Sun, Moon, Laptop, Shield, FileText, Terminal } from 'lucide-react';
 import { Logo } from './Logo';
 
 export type ThemeMode = 'system' | 'dark' | 'light';
@@ -12,6 +12,7 @@ interface NavbarProps {
   onOpenAntiBanned: () => void;
   onOpenSecurity: () => void;
   onOpenLegal: () => void;
+  onOpenLogs: () => void;
   onRefresh: () => void;
   isRefreshing: boolean;
   credentialsConfigured: boolean;
@@ -28,6 +29,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenAntiBanned,
   onOpenSecurity,
   onOpenLegal,
+  onOpenLogs,
   onRefresh,
   isRefreshing,
   credentialsConfigured,
@@ -123,7 +125,18 @@ export const Navbar: React.FC<NavbarProps> = ({
             title="Kebijakan Privasi & Ketentuan Layanan"
           >
             <FileText className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
-            <span className="hidden sm:inline">Legal</span>
+            <span className="hidden md:inline">Legal</span>
+          </button>
+
+          {/* Diagnostic Logs */}
+          <button
+            type="button"
+            onClick={onOpenLogs}
+            className="inline-flex items-center space-x-1.5 px-2.5 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-xl border border-slate-200 dark:border-slate-700 transition-colors cursor-pointer"
+            title="Lihat Log Diagnostik & Aktivitas Sistem"
+          >
+            <Terminal className="w-3.5 h-3.5 text-purple-500" />
+            <span className="hidden sm:inline">Log</span>
           </button>
 
           {/* Kredensial API */}

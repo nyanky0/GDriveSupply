@@ -19,6 +19,7 @@ import (
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 	"gdrive-supply/internal/config"
+	"gdrive-supply/internal/logger"
 )
 
 type ProcessEntry struct {
@@ -209,29 +210,50 @@ scope = drive
 		"--vfs-read-chunk-size-limit", "256M",
 		"--dir-cache-time", "1h",
 		"--volname", volName,
-		"--no-console",
+		"-v",
 	}
 
+	logger.Get().Infof("MOUNT", "Menjalankan perintah rclone mount untuk drive %s (%s)...", drive.DriveLetter, drive.ID)
+
 	cmd := exec.Command(s.rclonePath, args...)
-	// Hide console window on Windows
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		HideWindow:    true,
 		CreationFlags: 0x08000000, // CREATE_NO_WINDOW
+	}
+
+	stdoutPipe, err := cmd.StdoutPipe()
+	if err != nil {
+		_ = os.Remove(tempConf)
+		return fmt.Errorf("gagal pipe stdout: %w", err)
+	}
+	stderrPipe, err := cmd.StderrPipe()
+	if err != nil {
+		_ = os.Remove(tempConf)
+		return fmt.Errorf("gagal pipe stderr: %w", err)
 	}
 
 	errCh := make(chan error, 1)
 
 	if err := cmd.Start(); err != nil {
 		_ = os.Remove(tempConf)
+		logger.Get().Errorf("MOUNT", "Gagal menjalankan proses rclone: %v", err)
 		return fmt.Errorf("gagal menjalankan proses mount: %w", err)
 	}
 
+	logger.Get().PipeProcessOutput(fmt.Sprintf("VFS-%s", drive.DriveLetter), stdoutPipe, stderrPipe)
+
 	go func() {
-		errCh <- cmd.Wait()
+		exitErr := cmd.Wait()
+		errCh <- exitErr
 		s.mu.Lock()
 		delete(s.processes, drive.ID)
 		s.mu.Unlock()
 		_ = os.Remove(tempConf)
+		if exitErr != nil {
+			logger.Get().Warnf("MOUNT", "Proses rclone drive %s (%s) berhenti: %v", drive.DriveLetter, drive.ID, exitErr)
+		} else {
+			logger.Get().Infof("MOUNT", "Proses rclone drive %s (%s) selesai dengan normal", drive.DriveLetter, drive.ID)
+		}
 	}()
 
 	select {
@@ -240,9 +262,11 @@ scope = drive
 		delete(s.processes, drive.ID)
 		s.mu.Unlock()
 		_ = os.Remove(tempConf)
-		return fmt.Errorf("proses mount berhenti seketika (%v). Pastikan huruf drive %s belum dipakai", exitErr, drive.DriveLetter)
+		errMsg := fmt.Sprintf("proses mount berhenti seketika (%v). Pastikan huruf drive %s belum dipakai", exitErr, drive.DriveLetter)
+		logger.Get().Errorf("MOUNT", errMsg)
+		return fmt.Errorf(errMsg)
 	case <-time.After(1500 * time.Millisecond):
-		// rclone successfully started and running
+		logger.Get().Infof("MOUNT", "Drive %s berhasil aktif terpasang di Windows File Explorer!", drive.DriveLetter)
 	}
 
 	s.processes[drive.ID] = &ProcessEntry{

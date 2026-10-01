@@ -7,10 +7,12 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 
 	"gdrive-supply/internal/config"
+	"gdrive-supply/internal/logger"
 	"gdrive-supply/internal/mount"
 	"gdrive-supply/internal/sysutil"
 
@@ -98,6 +100,11 @@ func (a *API) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/drives/open/", a.withAuth(a.HandleOpenExplorer))
 	mux.HandleFunc("POST /api/winfsp/install", a.withAuth(a.HandleInstallWinFsp))
 	mux.HandleFunc("POST /api/system/shutdown", a.withAuth(a.HandleShutdown))
+
+	// Diagnostic Logs Endpoints (High capacity feed & download)
+	mux.HandleFunc("GET /api/logs", a.withAuth(a.HandleGetLogs))
+	mux.HandleFunc("GET /api/logs/download", a.withAuth(a.HandleDownloadLogs))
+	mux.HandleFunc("POST /api/logs/clear", a.withAuth(a.HandleClearLogs))
 }
 
 func (a *API) HandleAuthStatus(w http.ResponseWriter, r *http.Request) {
@@ -714,3 +721,55 @@ func (a *API) HandleShutdown(w http.ResponseWriter, r *http.Request) {
 		os.Exit(0)
 	}()
 }
+
+// HandleGetLogs returns diagnostic log entries with filtering and high capacity limits
+func (a *API) HandleGetLogs(w http.ResponseWriter, r *http.Request) {
+	limitStr := r.URL.Query().Get("limit")
+	limit := 500
+	if limitStr != "" {
+		if val, err := strconv.Atoi(limitStr); err == nil && val > 0 {
+			limit = val
+		}
+	}
+
+	level := r.URL.Query().Get("level")
+	keyword := r.URL.Query().Get("q")
+
+	l := logger.Get()
+	entries := l.GetEntries(limit, level, keyword)
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"entries":     entries,
+		"count":       len(entries),
+		"logFilePath": l.GetLogFilePath(),
+		"maxCapacity": 5000,
+	})
+}
+
+// HandleDownloadLogs streams the full persistent log file as an attachment
+func (a *API) HandleDownloadLogs(w http.ResponseWriter, r *http.Request) {
+	logPath := logger.Get().GetLogFilePath()
+	data, err := os.ReadFile(logPath)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Gagal membaca file log: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Content-Disposition", "attachment; filename=\"gdrive_supply.log\"")
+	w.Header().Set("Content-Length", strconv.Itoa(len(data)))
+	_, _ = w.Write(data)
+}
+
+// HandleClearLogs clears the in-memory log buffer and resets the log file
+func (a *API) HandleClearLogs(w http.ResponseWriter, r *http.Request) {
+	logger.Get().Clear()
+	logger.Get().Infof("CORE", "Buffer log telah dibersihkan oleh pengguna.")
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"status":  "ok",
+		"message": "Log berhasil dibersihkan",
+	})
+}
+
