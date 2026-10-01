@@ -27,3 +27,13 @@ export interface GoogleCredential {
   clientSecret: string;
   configured: boolean;
 }
+
+export interface AuthStatus {
+  passwordEnabled: boolean;
+  passwordConfigured: boolean;
+  authenticated: boolean;
+  failedAttempts: number;
+  maxAttempts: number;
+  remainingAttempts: number;
+}
+

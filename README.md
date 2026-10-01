@@ -71,8 +71,23 @@ Setiap akun memiliki partisi drive tersendiri dengan kapasitas penuh (misalnya 5
    - Berkomunikasi melalui endpoint resmi **Google Drive API v3**, bukan web scraping atau token harvester ilegal.
    - Kuota API (20.000 request/menit) dialokasikan khusus dan terisolasi untuk proyek pribadi Anda.
 
-8. **Keamanan Windows DPAPI**
-   - Client Secret dan Refresh Token dienkripsi menggunakan *Windows Data Protection API* (DPAPI). Token yang tersimpan di `%APPDATA%\GDriveSupply\config.json` tidak dapat dibaca oleh komputer atau pengguna Windows lain.
+8. **Master Password & Sesi Web Persisten**
+   - Proteksi akses dashboard web dengan kata sandi master.
+   - Sesi tersimpan aman via HTTP-Only SameSite Cookie (`gdrive_session`), sehingga user tidak perlu login berulang kali saat me-refresh halaman browser.
+   - Menggunakan hashing kriptografi kuat **bcrypt** (cost factor 12) dan validasi kompleksitas ketat (minimal 8 karakter, huruf besar, huruf kecil, angka, dan simbol khusus).
+
+9. **Brute-Force Panic Reset (Kill Switch Darurat)**
+   - Proteksi anti-brute-force otomatis: maksimal 5 kali percobaan salah dalam 1 siklus login.
+   - Jika salah 1-4 kali lalu berhasil, counter kegagalan otomatis di-reset ke 0.
+   - **Jika salah 5 kali berturut-turut**: Sistem langsung memicu **Factory Reset Darurat** — seluruh virtual drive dilepas (*unmounted*), file konfigurasi `%APPDATA%\GDriveSupply\config.json` dihapus bersih, dan sesi diputus demi melindungi akun Google Drive Anda.
+
+10. **Prinsip Zero-Residual Storage**
+    - Fitur password dapat dinonaktifkan di pengaturan kapan saja.
+    - Saat dimatikan, seluruh hash password dan kredensial otentikasi langsung dihapus bersih dari disk (kami tidak menyimpan sisa hash enkripsi saat fitur nonaktif).
+
+11. **Keamanan Windows DPAPI & 100% Client-Side**
+    - Client Secret dan Refresh Token dienkripsi menggunakan *Windows Data Protection API* (DPAPI). Token yang tersimpan di `%APPDATA%\GDriveSupply\config.json` tidak dapat dibaca oleh komputer atau pengguna Windows lain.
+    - Dilengkapi dokumen kepatuhan resmi [PRIVACY.md](PRIVACY.md) dan [TERMS.md](TERMS.md) sesuai *Google API Services User Data Policy*.
 
 ---
 

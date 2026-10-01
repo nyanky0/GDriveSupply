@@ -8,8 +8,11 @@ import { CredentialsModal } from './components/CredentialsModal';
 import { RenameDriveModal } from './components/RenameDriveModal';
 import { ShutdownModal } from './components/ShutdownModal';
 import { AntiBannedModal } from './components/AntiBannedModal';
+import { LockScreen } from './components/LockScreen';
+import { SecuritySettingsModal } from './components/SecuritySettingsModal';
+import { LegalModal } from './components/LegalModal';
 import { HardDrive, Plus, BookOpen, AlertCircle, CheckCircle2 } from 'lucide-react';
-import type { DriveAccount, SystemStatus, GoogleCredential } from './types';
+import type { DriveAccount, SystemStatus, GoogleCredential, AuthStatus } from './types';
 
 export function App() {
   const [drives, setDrives] = useState<DriveAccount[]>([]);
@@ -24,6 +27,15 @@ export function App() {
     clientId: '',
     clientSecret: '',
     configured: false,
+  });
+
+  const [authStatus, setAuthStatus] = useState<AuthStatus>({
+    passwordEnabled: false,
+    passwordConfigured: false,
+    authenticated: true,
+    failedAttempts: 0,
+    maxAttempts: 5,
+    remainingAttempts: 5,
   });
 
   const [isLoading, setIsLoading] = useState(true);
@@ -75,6 +87,8 @@ export function App() {
   const [renameTargetDrive, setRenameTargetDrive] = useState<DriveAccount | null>(null);
   const [isShutdownOpen, setIsShutdownOpen] = useState(false);
   const [isAntiBannedOpen, setIsAntiBannedOpen] = useState(false);
+  const [isSecurityModalOpen, setIsSecurityModalOpen] = useState(false);
+  const [isLegalModalOpen, setIsLegalModalOpen] = useState(false);
 
   // Toast Notification
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
@@ -84,9 +98,28 @@ export function App() {
     setTimeout(() => setToast(null), 3500);
   };
 
+  const fetchAuthStatus = useCallback(async () => {
+    try {
+      const res = await fetch('/api/auth/status');
+      if (res.ok) {
+        const data = await res.json();
+        setAuthStatus(data);
+        return data;
+      }
+    } catch {
+      // Offline preview
+    }
+    return null;
+  }, []);
+
   const fetchStatus = useCallback(async () => {
     try {
       const res = await fetch('/api/status');
+      if (res.status === 401) {
+        // Auth required
+        fetchAuthStatus();
+        return;
+      }
       if (res.ok) {
         const data = await res.json();
         setDrives(data.drives || []);
@@ -105,25 +138,28 @@ export function App() {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, []);
+  }, [fetchAuthStatus]);
 
   useEffect(() => {
+    fetchAuthStatus();
     fetchStatus();
     // Auto poll status every 10 seconds
-    const interval = setInterval(fetchStatus, 10000);
+    const interval = setInterval(() => {
+      fetchStatus();
+    }, 10000);
     return () => clearInterval(interval);
-  }, [fetchStatus]);
+  }, [fetchAuthStatus, fetchStatus]);
 
   // Handle URL query parameters for OAuth success/error callbacks
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const authStatus = params.get('auth');
+    const authParam = params.get('auth');
     const msg = params.get('message');
-    if (authStatus === 'success') {
+    if (authParam === 'success') {
       showToast('Berhasil menghubungkan akun Google Drive!', 'success');
       window.history.replaceState({}, document.title, window.location.pathname);
       fetchStatus();
-    } else if (authStatus === 'error') {
+    } else if (authParam === 'error') {
       showToast(msg || 'Gagal otorisasi akun Google.', 'error');
       window.history.replaceState({}, document.title, window.location.pathname);
     }
@@ -138,10 +174,10 @@ export function App() {
         await fetchStatus();
       } else {
         const err = await res.json();
-        showToast(err.message || 'Gagal memasang drive.', 'error');
+        showToast(err.error || 'Gagal memasang drive.', 'error');
       }
     } catch {
-      showToast('Gagal menghubungi service.', 'error');
+      showToast('Gagal menghubungi backend API.', 'error');
     } finally {
       setActionLoadingId(null);
     }
@@ -156,38 +192,40 @@ export function App() {
         await fetchStatus();
       } else {
         const err = await res.json();
-        showToast(err.message || 'Gagal melepas drive.', 'error');
+        showToast(err.error || 'Gagal melepas drive.', 'error');
       }
     } catch {
-      showToast('Gagal menghubungi service.', 'error');
+      showToast('Gagal menghubungi backend API.', 'error');
     } finally {
       setActionLoadingId(null);
     }
   };
 
-  const handleOpenExplorer = async (driveLetter: string) => {
-    try {
-      await fetch(`/api/drives/open/${driveLetter.replace(':', '')}`, { method: 'POST' });
-    } catch {
-      showToast(`Gagal membuka drive ${driveLetter}`, 'error');
-    }
-  };
-
   const handleDelete = async (id: string) => {
-    if (!confirm('Apakah Anda yakin ingin menghapus akun ini dari daftar drive?')) return;
+    if (!window.confirm('Apakah Anda yakin ingin menghapus akun drive ini dari daftar?')) {
+      return;
+    }
     setActionLoadingId(id);
     try {
       const res = await fetch(`/api/drives/${id}`, { method: 'DELETE' });
       if (res.ok) {
-        showToast('Akun Google Drive berhasil dihapus.');
+        showToast('Akun drive berhasil dihapus.');
         await fetchStatus();
       } else {
         showToast('Gagal menghapus drive.', 'error');
       }
     } catch {
-      showToast('Gagal menghubungi service.', 'error');
+      showToast('Gagal menghubungi backend API.', 'error');
     } finally {
       setActionLoadingId(null);
+    }
+  };
+
+  const handleOpenExplorer = async (id: string) => {
+    try {
+      await fetch(`/api/drives/open/${id}`, { method: 'POST' });
+    } catch {
+      showToast('Gagal membuka Windows File Explorer', 'error');
     }
   };
 
@@ -199,19 +237,22 @@ export function App() {
         body: JSON.stringify({ clientId, clientSecret }),
       });
       if (res.ok) {
+        showToast('Kredensial OAuth berhasil disimpan secara terenkripsi (DPAPI)!');
+        setIsCredentialsModalOpen(false);
         await fetchStatus();
         return true;
+      } else {
+        showToast('Gagal menyimpan kredensial.', 'error');
+        return false;
       }
-      return false;
     } catch {
+      showToast('Gagal menghubungi backend API.', 'error');
       return false;
     }
   };
 
-  const handleStartAuth = (driveLetter: string, accountName: string) => {
-    const encodedLetter = encodeURIComponent(driveLetter);
-    const encodedName = encodeURIComponent(accountName);
-    window.location.href = `/api/auth/start?letter=${encodedLetter}&name=${encodedName}`;
+  const handleStartAuth = (letter: string, name: string) => {
+    window.location.href = `/api/auth/start?letter=${encodeURIComponent(letter)}&name=${encodeURIComponent(name)}`;
   };
 
   const handleInstallWinFsp = async () => {
@@ -219,15 +260,14 @@ export function App() {
     try {
       const res = await fetch('/api/winfsp/install', { method: 'POST' });
       if (res.ok) {
-        showToast('Installer WinFsp berhasil dibuka! Silakan ikuti instruksi di layar komputer Anda.');
+        showToast('Sedang menyiapkan installer WinFsp di Windows Anda...');
       } else {
-        const err = await res.json();
-        showToast(err.error || 'Gagal membuka installer WinFsp.', 'error');
+        showToast('Gagal memicu pemasangan WinFsp.', 'error');
       }
     } catch {
-      showToast('Gagal menghubungi service lokal.', 'error');
+      showToast('Gagal menghubungi backend API.', 'error');
     } finally {
-      setIsInstallingWinFsp(false);
+      setTimeout(() => setIsInstallingWinFsp(false), 3000);
     }
   };
 
@@ -237,20 +277,38 @@ export function App() {
     fetchStatus();
   };
 
+  // If password lock is active and user is not authenticated
+  const isLocked = authStatus.passwordEnabled && !authStatus.authenticated;
+
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col transition-colors">
+      {/* Lock Screen Overlay */}
+      {isLocked && (
+        <LockScreen
+          authStatus={authStatus}
+          onAuthenticated={() => {
+            fetchAuthStatus();
+            fetchStatus();
+          }}
+          onRefreshStatus={fetchAuthStatus}
+        />
+      )}
+
       <Navbar
         onOpenTutorial={() => setIsTutorialModalOpen(true)}
         onOpenCredentials={() => setIsCredentialsModalOpen(true)}
         onOpenAddDrive={() => setIsAddModalOpen(true)}
         onOpenShutdown={() => setIsShutdownOpen(true)}
         onOpenAntiBanned={() => setIsAntiBannedOpen(true)}
+        onOpenSecurity={() => setIsSecurityModalOpen(true)}
+        onOpenLegal={() => setIsLegalModalOpen(true)}
         onRefresh={() => {
           setIsRefreshing(true);
           fetchStatus();
         }}
         isRefreshing={isRefreshing}
         credentialsConfigured={credentials.configured}
+        passwordEnabled={authStatus.passwordEnabled}
         theme={theme}
         onToggleTheme={toggleTheme}
       />
@@ -335,7 +393,7 @@ export function App() {
                 <button
                   type="button"
                   onClick={() => setIsTutorialModalOpen(true)}
-                  className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl transition-colors"
+                  className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl transition-colors cursor-pointer"
                 >
                   <BookOpen className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
                   <span>Lihat Panduan Setup</span>
@@ -344,7 +402,7 @@ export function App() {
                 <button
                   type="button"
                   onClick={() => setIsAddModalOpen(true)}
-                  className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-medium text-white dark:text-slate-900 bg-slate-900 dark:bg-white hover:bg-slate-800 dark:hover:bg-slate-100 rounded-xl shadow-xs transition-colors"
+                  className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-medium text-white dark:text-slate-900 bg-slate-900 dark:bg-white hover:bg-slate-800 dark:hover:bg-slate-100 rounded-xl shadow-xs transition-colors cursor-pointer"
                 >
                   <Plus className="w-3.5 h-3.5" />
                   <span>Tambah Drive Pertama</span>
@@ -359,7 +417,16 @@ export function App() {
       <footer className="border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 py-4 mt-auto transition-colors">
         <div className="max-w-7xl mx-auto px-4 text-center text-xs text-slate-500 dark:text-slate-400 flex flex-col sm:flex-row items-center justify-between gap-2">
           <span>GDrive Supply • Direct Client-to-Cloud Service • Zero-VPS Bandwidth</span>
-          <span className="font-mono text-[11px] text-slate-400 dark:text-slate-500">Windows File System Proxy (WinFsp)</span>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setIsLegalModalOpen(true)}
+              className="text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white transition-colors underline cursor-pointer"
+            >
+              Kebijakan Privasi & Ketentuan
+            </button>
+            <span className="font-mono text-[11px] text-slate-400 dark:text-slate-500">• WinFsp Driver</span>
+          </div>
         </div>
       </footer>
 
@@ -401,6 +468,19 @@ export function App() {
       <AntiBannedModal
         isOpen={isAntiBannedOpen}
         onClose={() => setIsAntiBannedOpen(false)}
+      />
+
+      <SecuritySettingsModal
+        isOpen={isSecurityModalOpen}
+        onClose={() => setIsSecurityModalOpen(false)}
+        authStatus={authStatus}
+        onRefreshStatus={fetchAuthStatus}
+        onShowToast={showToast}
+      />
+
+      <LegalModal
+        isOpen={isLegalModalOpen}
+        onClose={() => setIsLegalModalOpen(false)}
       />
     </div>
   );

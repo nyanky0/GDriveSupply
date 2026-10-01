@@ -281,10 +281,26 @@ func (s *Supervisor) IsMounted(driveID string) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-
 	entry, ok := s.processes[driveID]
 	if !ok {
 		return false
 	}
 	return entry.Cmd != nil && entry.Cmd.ProcessState == nil
 }
+
+// UnmountAll terminates all active drive mount processes and cleans up configs
+func (s *Supervisor) UnmountAll() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for id, entry := range s.processes {
+		if entry.Cmd != nil && entry.Cmd.Process != nil {
+			_ = entry.Cmd.Process.Kill()
+			_ = entry.Cmd.Wait()
+		}
+		tempConf := filepath.Join(s.binDir, fmt.Sprintf("rclone_%s.conf", id))
+		_ = os.Remove(tempConf)
+	}
+	s.processes = make(map[string]*ProcessEntry)
+}
+

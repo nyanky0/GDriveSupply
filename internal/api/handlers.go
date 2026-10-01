@@ -32,21 +32,273 @@ func NewAPI(store *config.Store, supervisor *mount.Supervisor) *API {
 	}
 }
 
-// RegisterRoutes registers all API endpoints to an http.ServeMux
-func (a *API) RegisterRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("GET /api/status", a.HandleStatus)
-	mux.HandleFunc("POST /api/config/credentials", a.HandleSaveCredentials)
-	mux.HandleFunc("GET /api/auth/start", a.HandleAuthStart)
-	mux.HandleFunc("GET /api/auth/callback", a.HandleAuthCallback)
-	mux.HandleFunc("POST /api/drives/mount/", a.HandleMountDrive)
-	mux.HandleFunc("POST /api/drives/unmount/", a.HandleUnmountDrive)
-	mux.HandleFunc("POST /api/drives/rename", a.HandleRenameDrive)
-	mux.HandleFunc("DELETE /api/drives/", a.HandleDeleteDrive)
-	mux.HandleFunc("POST /api/drives/open/", a.HandleOpenExplorer)
-	mux.HandleFunc("POST /api/winfsp/install", a.HandleInstallWinFsp)
-	mux.HandleFunc("POST /api/system/shutdown", a.HandleShutdown)
+func setSessionCookie(w http.ResponseWriter, token string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     "gdrive_session",
+		Value:    token,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteStrictMode,
+		MaxAge:   86400 * 30, // 30 days
+	})
 }
 
+func clearSessionCookie(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     "gdrive_session",
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteStrictMode,
+		MaxAge:   -1,
+	})
+}
+
+func (a *API) withAuth(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		cookie, err := r.Cookie("gdrive_session")
+		var token string
+		if err == nil {
+			token = cookie.Value
+		}
+
+		enabled, _, authenticated, _ := a.store.GetSecurityStatus(token)
+		if enabled && !authenticated {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"error":        "unauthorized",
+				"authRequired": true,
+			})
+			return
+		}
+		next(w, r)
+	}
+}
+
+// RegisterRoutes registers all API endpoints to an http.ServeMux
+func (a *API) RegisterRoutes(mux *http.ServeMux) {
+	// Public Auth endpoints
+	mux.HandleFunc("GET /api/auth/status", a.HandleAuthStatus)
+	mux.HandleFunc("POST /api/auth/login", a.HandleAuthLogin)
+	mux.HandleFunc("POST /api/auth/setup", a.HandleAuthSetup)
+	mux.HandleFunc("POST /api/auth/logout", a.HandleAuthLogout)
+
+	// Protected Endpoints
+	mux.HandleFunc("POST /api/auth/change-password", a.withAuth(a.HandleChangePassword))
+	mux.HandleFunc("POST /api/auth/toggle", a.withAuth(a.HandleTogglePassword))
+	mux.HandleFunc("GET /api/status", a.withAuth(a.HandleStatus))
+	mux.HandleFunc("POST /api/config/credentials", a.withAuth(a.HandleSaveCredentials))
+	mux.HandleFunc("GET /api/auth/start", a.withAuth(a.HandleAuthStart))
+	mux.HandleFunc("GET /api/auth/callback", a.HandleAuthCallback)
+	mux.HandleFunc("POST /api/drives/mount/", a.withAuth(a.HandleMountDrive))
+	mux.HandleFunc("POST /api/drives/unmount/", a.withAuth(a.HandleUnmountDrive))
+	mux.HandleFunc("POST /api/drives/rename", a.withAuth(a.HandleRenameDrive))
+	mux.HandleFunc("DELETE /api/drives/", a.withAuth(a.HandleDeleteDrive))
+	mux.HandleFunc("POST /api/drives/open/", a.withAuth(a.HandleOpenExplorer))
+	mux.HandleFunc("POST /api/winfsp/install", a.withAuth(a.HandleInstallWinFsp))
+	mux.HandleFunc("POST /api/system/shutdown", a.withAuth(a.HandleShutdown))
+}
+
+func (a *API) HandleAuthStatus(w http.ResponseWriter, r *http.Request) {
+	cookie, _ := r.Cookie("gdrive_session")
+	var token string
+	if cookie != nil {
+		token = cookie.Value
+	}
+
+	enabled, configured, authenticated, failedAttempts := a.store.GetSecurityStatus(token)
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"passwordEnabled":    enabled,
+		"passwordConfigured": configured,
+		"authenticated":      authenticated,
+		"failedAttempts":     failedAttempts,
+		"maxAttempts":        5,
+		"remainingAttempts":  5 - failedAttempts,
+	})
+}
+
+func (a *API) HandleAuthLogin(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid json"}`, http.StatusBadRequest)
+		return
+	}
+
+	authOk, token, failedAttempts, factoryReset, _ := a.store.VerifyMasterPassword(req.Password)
+	if factoryReset {
+		a.supervisor.UnmountAll()
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":       "factory_reset",
+			"message":      "5 kali salah password berturut-turut. Seluruh pengaturan dan koneksi drive telah dihapus demi keamanan.",
+			"authRequired": false,
+		})
+		return
+	}
+
+	if !authOk {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":            "error",
+			"message":           fmt.Sprintf("Password salah. Percobaan tersisa: %d dari 5.", 5-failedAttempts),
+			"failedAttempts":    failedAttempts,
+			"remainingAttempts": 5 - failedAttempts,
+		})
+		return
+	}
+
+	setSessionCookie(w, token)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":        "ok",
+		"authenticated": true,
+		"message":       "Berhasil masuk",
+	})
+}
+
+func (a *API) HandleAuthSetup(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Password        string `json:"password"`
+		ConfirmPassword string `json:"confirmPassword"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid json"}`, http.StatusBadRequest)
+		return
+	}
+
+	if req.Password != req.ConfirmPassword {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "Konfirmasi password baru tidak cocok"})
+		return
+	}
+
+	token, err := a.store.SetMasterPassword(req.Password)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	setSessionCookie(w, token)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":        "ok",
+		"authenticated": true,
+		"message":       "Password master berhasil dibuat",
+	})
+}
+
+func (a *API) HandleChangePassword(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		OldPassword     string `json:"oldPassword"`
+		NewPassword     string `json:"newPassword"`
+		ConfirmPassword string `json:"confirmPassword"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid json"}`, http.StatusBadRequest)
+		return
+	}
+
+	if req.NewPassword != req.ConfirmPassword {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "Konfirmasi password baru tidak cocok"})
+		return
+	}
+
+	token, factoryReset, err := a.store.ChangeMasterPassword(req.OldPassword, req.NewPassword)
+	if factoryReset {
+		a.supervisor.UnmountAll()
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "factory_reset",
+			"message": "5 kali salah password berturut-turut. Aplikasi di-reset ke kondisi awal.",
+		})
+		return
+	}
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	setSessionCookie(w, token)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":  "ok",
+		"message": "Password berhasil diperbarui",
+	})
+}
+
+func (a *API) HandleTogglePassword(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Enabled         bool   `json:"enabled"`
+		Password        string `json:"password,omitempty"`
+		ConfirmPassword string `json:"confirmPassword,omitempty"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid json"}`, http.StatusBadRequest)
+		return
+	}
+
+	if !req.Enabled {
+		// Nonaktifkan & hapus hash password dari disk!
+		if err := a.store.DisablePassword(); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		clearSessionCookie(w)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":          "ok",
+			"passwordEnabled": false,
+			"message":         "Proteksi password dinonaktifkan. Data password telah dihapus dari sistem.",
+		})
+		return
+	}
+
+	// Mengaktifkan: Wajib input password baru & konfirmasi
+	if req.Password != req.ConfirmPassword {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "Konfirmasi password tidak cocok"})
+		return
+	}
+
+	token, err := a.store.SetMasterPassword(req.Password)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	setSessionCookie(w, token)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":          "ok",
+		"passwordEnabled": true,
+		"message":         "Proteksi password master berhasil diaktifkan",
+	})
+}
+
+func (a *API) HandleAuthLogout(w http.ResponseWriter, r *http.Request) {
+	_ = a.store.InvalidateSession()
+	clearSessionCookie(w)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok", "message": "Berhasil keluar"})
+}
 
 func (a *API) HandleStatus(w http.ResponseWriter, r *http.Request) {
 	drives := a.store.GetAllDrives()
@@ -73,6 +325,13 @@ func (a *API) HandleStatus(w http.ResponseWriter, r *http.Request) {
 	clientID, clientSecret, _ := a.store.GetCredentials()
 	availableLetters := sysutil.GetAvailableDriveLetters()
 
+	cookie, _ := r.Cookie("gdrive_session")
+	var token string
+	if cookie != nil {
+		token = cookie.Value
+	}
+	pwEnabled, _, _, _ := a.store.GetSecurityStatus(token)
+
 	resp := map[string]interface{}{
 		"systemStatus": map[string]interface{}{
 			"totalStorage":      totalStorage,
@@ -81,8 +340,8 @@ func (a *API) HandleStatus(w http.ResponseWriter, r *http.Request) {
 			"activeDrivesCount": activeCount,
 			"availableLetters":  availableLetters,
 			"winfspInstalled":   mount.CheckWinFspInstalled(),
+			"passwordEnabled":   pwEnabled,
 		},
-
 		"drives": drives,
 		"credentials": map[string]interface{}{
 			"configured":   clientID != "" && clientSecret != "",
@@ -139,13 +398,13 @@ func (a *API) HandleAuthStart(w http.ResponseWriter, r *http.Request) {
 	oauthConf := &oauth2.Config{
 		ClientID:     clientID,
 		ClientSecret: clientSecret,
-		Endpoint:     google.Endpoint,
 		RedirectURL:  redirectURL,
 		Scopes: []string{
-			drive.DriveScope,
+			"https://www.googleapis.com/auth/drive",
 			"https://www.googleapis.com/auth/userinfo.email",
 			"https://www.googleapis.com/auth/userinfo.profile",
 		},
+		Endpoint: google.Endpoint,
 	}
 
 	statePayload := fmt.Sprintf("%s|%s", letter, name)
@@ -160,24 +419,31 @@ func (a *API) HandleAuthStart(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) HandleAuthCallback(w http.ResponseWriter, r *http.Request) {
 	code := r.URL.Query().Get("code")
-	if code == "" {
-		http.Redirect(w, r, "/?auth=error&message=Kode+otorisasi+Google+kosong", http.StatusTemporaryRedirect)
+	state := r.URL.Query().Get("state")
+	errParam := r.URL.Query().Get("error")
+
+	if errParam != "" {
+		http.Redirect(w, r, fmt.Sprintf("/?auth=error&message=%s", errParam), http.StatusTemporaryRedirect)
 		return
 	}
 
-	state := r.URL.Query().Get("state")
+	if code == "" {
+		http.Redirect(w, r, "/?auth=error&message=No+code+provided", http.StatusTemporaryRedirect)
+		return
+	}
+
+	letter := "X:"
+	volumeLabel := "Google Drive"
 	parts := strings.Split(state, "|")
-	targetLetter := "X:"
-	accountName := "Google Drive"
 	if len(parts) >= 1 && parts[0] != "" {
-		targetLetter = parts[0]
+		letter = parts[0]
 	}
 	if len(parts) >= 2 && parts[1] != "" {
-		accountName = parts[1]
+		volumeLabel = parts[1]
 	}
 
 	clientID, clientSecret, err := a.store.GetCredentials()
-	if err != nil || clientID == "" {
+	if err != nil || clientID == "" || clientSecret == "" {
 		http.Redirect(w, r, "/?auth=error&message=Kredensial+hilang", http.StatusTemporaryRedirect)
 		return
 	}
@@ -186,109 +452,120 @@ func (a *API) HandleAuthCallback(w http.ResponseWriter, r *http.Request) {
 	oauthConf := &oauth2.Config{
 		ClientID:     clientID,
 		ClientSecret: clientSecret,
-		Endpoint:     google.Endpoint,
 		RedirectURL:  redirectURL,
 		Scopes: []string{
-			drive.DriveScope,
+			"https://www.googleapis.com/auth/drive",
 			"https://www.googleapis.com/auth/userinfo.email",
 			"https://www.googleapis.com/auth/userinfo.profile",
 		},
+		Endpoint: google.Endpoint,
 	}
 
-	ctx := context.Background()
-	token, err := oauthConf.Exchange(ctx, code)
+	tok, err := oauthConf.Exchange(context.Background(), code)
 	if err != nil {
-		http.Redirect(w, r, fmt.Sprintf("/?auth=error&message=Gagal+tukar+token:+%s", err.Error()), http.StatusTemporaryRedirect)
+		http.Redirect(w, r, fmt.Sprintf("/?auth=error&message=Exchange+failed:+%s", err.Error()), http.StatusTemporaryRedirect)
 		return
 	}
 
-	if token.RefreshToken == "" {
-		http.Redirect(w, r, "/?auth=error&message=Google+tidak+mengirim+refresh_token.+Coba+hapus+izin+aplikasi+di+Google+Security+dan+login+ulang.", http.StatusTemporaryRedirect)
+	if tok.RefreshToken == "" {
+		http.Redirect(w, r, "/?auth=error&message=No+refresh+token+received", http.StatusTemporaryRedirect)
 		return
 	}
 
-	// Fetch user & storage details from Google Drive API
-	client := oauthConf.Client(ctx, token)
-	driveService, err := drive.NewService(ctx, option.WithHTTPClient(client))
+	// Fetch User info & Drive quota
+	client := oauthConf.Client(context.Background(), tok)
+	srv, err := drive.NewService(context.Background(), option.WithHTTPClient(client))
 	if err != nil {
-		http.Redirect(w, r, fmt.Sprintf("/?auth=error&message=Gagal+konek+Drive+API:+%s", err.Error()), http.StatusTemporaryRedirect)
+		http.Redirect(w, r, fmt.Sprintf("/?auth=error&message=Drive+service+failed:+%s", err.Error()), http.StatusTemporaryRedirect)
 		return
 	}
 
-	about, err := driveService.About.Get().Fields("user(emailAddress,displayName),storageQuota(limit,usage)").Do()
-	email := "unknown@gmail.com"
-	var totalStorage, usedStorage int64 = 16106127360, 0 // Default 15 GB
-	if err == nil && about != nil {
-		if about.User != nil && about.User.EmailAddress != "" {
-			email = about.User.EmailAddress
-		}
-		if about.StorageQuota != nil {
-			totalStorage = about.StorageQuota.Limit
-			usedStorage = about.StorageQuota.Usage
-		}
-	}
-
-	encRefresh, err := config.EncryptString(token.RefreshToken)
+	about, err := srv.About.Get().Fields("user(displayName,emailAddress,permissionId),storageQuota").Do()
 	if err != nil {
-		http.Redirect(w, r, "/?auth=error&message=Gagal+enkripsi+token", http.StatusTemporaryRedirect)
+		http.Redirect(w, r, fmt.Sprintf("/?auth=error&message=About+failed:+%s", err.Error()), http.StatusTemporaryRedirect)
 		return
 	}
 
-	driveID := fmt.Sprintf("drive_%d", time.Now().UnixNano())
+	email := about.User.EmailAddress
+	accountName := about.User.DisplayName
+	if accountName == "" {
+		accountName = email
+	}
+	userID := about.User.PermissionId
+	if userID == "" {
+		userID = email
+	}
+
+	totalStorage := about.StorageQuota.Limit
+	usedStorage := about.StorageQuota.UsageInDrive + about.StorageQuota.UsageInDriveTrash
+
+	encRefresh, err := config.EncryptString(tok.RefreshToken)
+	if err != nil {
+		http.Redirect(w, r, fmt.Sprintf("/?auth=error&message=Encryption+failed:+%s", err.Error()), http.StatusTemporaryRedirect)
+		return
+	}
+
 	driveCfg := &config.DriveConfig{
-		ID:              driveID,
+		ID:              userID,
 		Email:           email,
 		AccountName:     accountName,
-		DriveLetter:     targetLetter,
+		VolumeLabel:     volumeLabel,
+		DriveLetter:     letter,
 		RefreshTokenEnc: encRefresh,
 		TotalStorage:    totalStorage,
 		UsedStorage:     usedStorage,
-		Status:          "mounted",
+		Status:          "unmounted",
 		ConnectedAt:     time.Now(),
 		LastSynced:      time.Now(),
 	}
 
-	_ = a.store.SaveDrive(driveCfg)
+	if err := a.store.SaveDrive(driveCfg); err != nil {
+		http.Redirect(w, r, fmt.Sprintf("/?auth=error&message=Save+failed:+%s", err.Error()), http.StatusTemporaryRedirect)
+		return
+	}
 
-	// Launch rclone mount
-	go func() {
-		err := a.supervisor.MountDrive(driveCfg, clientID, clientSecret, token.RefreshToken)
-		if err != nil {
-			driveCfg.Status = "error"
-			driveCfg.ErrorMessage = err.Error()
-			_ = a.store.SaveDrive(driveCfg)
-		}
-	}()
+	// Auto-mount immediately
+	mountErr := a.supervisor.MountDrive(driveCfg, clientID, clientSecret, tok.RefreshToken)
+	if mountErr == nil {
+		driveCfg.Status = "mounted"
+		driveCfg.ErrorMessage = ""
+	} else {
+		driveCfg.Status = "error"
+		driveCfg.ErrorMessage = mountErr.Error()
+	}
+	_ = a.store.SaveDrive(driveCfg)
 
 	http.Redirect(w, r, "/?auth=success", http.StatusTemporaryRedirect)
 }
 
 func (a *API) HandleMountDrive(w http.ResponseWriter, r *http.Request) {
-	driveID := strings.TrimPrefix(r.URL.Path, "/api/drives/mount/")
-	driveCfg, ok := a.store.GetDrive(driveID)
+	id := strings.TrimPrefix(r.URL.Path, "/api/drives/mount/")
+	driveCfg, ok := a.store.GetDrive(id)
 	if !ok {
-		http.Error(w, `{"error":"drive not found"}`, http.StatusNotFound)
+		http.Error(w, "Drive not found", http.StatusNotFound)
 		return
 	}
 
 	clientID, clientSecret, err := a.store.GetCredentials()
-	if err != nil || clientID == "" {
-		http.Error(w, `{"error":"credentials not configured"}`, http.StatusBadRequest)
+	if err != nil || clientID == "" || clientSecret == "" {
+		http.Error(w, "Kredensial belum dikonfigurasi", http.StatusBadRequest)
 		return
 	}
 
 	refreshToken, err := config.DecryptString(driveCfg.RefreshTokenEnc)
 	if err != nil {
-		http.Error(w, `{"error":"failed to decrypt token"}`, http.StatusInternalServerError)
+		http.Error(w, "Gagal dekripsi token", http.StatusInternalServerError)
 		return
 	}
 
-	err = a.supervisor.MountDrive(driveCfg, clientID, clientSecret, refreshToken)
-	if err != nil {
+	mountErr := a.supervisor.MountDrive(driveCfg, clientID, clientSecret, refreshToken)
+	if mountErr != nil {
 		driveCfg.Status = "error"
-		driveCfg.ErrorMessage = err.Error()
+		driveCfg.ErrorMessage = mountErr.Error()
 		_ = a.store.SaveDrive(driveCfg)
-		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": mountErr.Error()})
 		return
 	}
 
@@ -297,86 +574,64 @@ func (a *API) HandleMountDrive(w http.ResponseWriter, r *http.Request) {
 	_ = a.store.SaveDrive(driveCfg)
 
 	w.Header().Set("Content-Type", "application/json")
-	w.Write([]byte(`{"status":"mounted"}`))
+	json.NewEncoder(w).Encode(driveCfg)
 }
 
 func (a *API) HandleUnmountDrive(w http.ResponseWriter, r *http.Request) {
-	driveID := strings.TrimPrefix(r.URL.Path, "/api/drives/unmount/")
-	driveCfg, ok := a.store.GetDrive(driveID)
+	id := strings.TrimPrefix(r.URL.Path, "/api/drives/unmount/")
+	driveCfg, ok := a.store.GetDrive(id)
 	if !ok {
-		http.Error(w, `{"error":"drive not found"}`, http.StatusNotFound)
+		http.Error(w, "Drive not found", http.StatusNotFound)
 		return
 	}
 
-	_ = a.supervisor.UnmountDrive(driveID)
+	if err := a.supervisor.UnmountDrive(id); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
 	driveCfg.Status = "unmounted"
 	_ = a.store.SaveDrive(driveCfg)
 
 	w.Header().Set("Content-Type", "application/json")
-	w.Write([]byte(`{"status":"unmounted"}`))
-}
-
-func (a *API) HandleDeleteDrive(w http.ResponseWriter, r *http.Request) {
-	driveID := strings.TrimPrefix(r.URL.Path, "/api/drives/")
-	_ = a.supervisor.UnmountDrive(driveID)
-	_ = a.store.DeleteDrive(driveID)
-
-	w.Header().Set("Content-Type", "application/json")
-	w.Write([]byte(`{"status":"deleted"}`))
-}
-
-func (a *API) HandleOpenExplorer(w http.ResponseWriter, r *http.Request) {
-	letter := strings.TrimPrefix(r.URL.Path, "/api/drives/open/")
-	if letter == "" {
-		http.Error(w, `{"error":"letter required"}`, http.StatusBadRequest)
-		return
-	}
-
-	_ = sysutil.OpenDriveInExplorer(letter)
-	w.Header().Set("Content-Type", "application/json")
-	w.Write([]byte(`{"status":"opened"}`))
-}
-
-func (a *API) HandleInstallWinFsp(w http.ResponseWriter, r *http.Request) {
-	err := a.supervisor.DownloadAndLaunchWinFspInstaller()
-	if err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.Write([]byte(`{"status":"installer_launched"}`))
-}
-
-type RenameRequest struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
+	json.NewEncoder(w).Encode(driveCfg)
 }
 
 func (a *API) HandleRenameDrive(w http.ResponseWriter, r *http.Request) {
-	var req RenameRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.ID == "" {
-		http.Error(w, `{"error":"ID drive diperlukan"}`, http.StatusBadRequest)
+	var req struct {
+		ID          string `json:"id"`
+		VolumeLabel string `json:"volumeLabel"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.ID == "" {
+		http.Error(w, "Drive ID is required", http.StatusBadRequest)
 		return
 	}
 
 	driveCfg, ok := a.store.GetDrive(req.ID)
 	if !ok {
-		http.Error(w, `{"error":"drive tidak ditemukan"}`, http.StatusNotFound)
+		http.Error(w, "Drive not found", http.StatusNotFound)
 		return
 	}
 
-	cleanedName := strings.TrimSpace(req.Name)
-	if cleanedName == "" {
-		cleanedName = fmt.Sprintf("GDrive_%s", strings.TrimSuffix(driveCfg.DriveLetter, ":"))
+	trimmedLabel := strings.TrimSpace(req.VolumeLabel)
+	if trimmedLabel == "" {
+		trimmedLabel = driveCfg.AccountName
 	}
 
-	driveCfg.VolumeLabel = cleanedName
-	driveCfg.AccountName = cleanedName
+	wasMounted := a.supervisor.IsMounted(driveCfg.ID)
+	if wasMounted {
+		_ = a.supervisor.UnmountDrive(driveCfg.ID)
+	}
+
+	driveCfg.VolumeLabel = trimmedLabel
 	_ = a.store.SaveDrive(driveCfg)
 
-	// If currently mounted, unmount & remount instantly so Windows File Explorer reflects the new volume label immediately
-	if a.supervisor.IsMounted(driveCfg.ID) {
-		_ = a.supervisor.UnmountDrive(driveCfg.ID)
+	if wasMounted {
 		clientID, clientSecret, _ := a.store.GetCredentials()
 		refreshToken, err := config.DecryptString(driveCfg.RefreshTokenEnc)
 		if err == nil && clientID != "" {
@@ -393,7 +648,45 @@ func (a *API) HandleRenameDrive(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(driveCfg)
+	_ = json.NewEncoder(w).Encode(driveCfg)
+}
+
+func (a *API) HandleDeleteDrive(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimPrefix(r.URL.Path, "/api/drives/")
+	_ = a.supervisor.UnmountDrive(id)
+
+	if err := a.store.DeleteDrive(id); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(`{"status":"deleted"}`))
+}
+
+func (a *API) HandleOpenExplorer(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimPrefix(r.URL.Path, "/api/drives/open/")
+	driveCfg, ok := a.store.GetDrive(id)
+	if !ok {
+		http.Error(w, "Drive not found", http.StatusNotFound)
+		return
+	}
+
+	go func() {
+		_ = exec.Command("explorer", driveCfg.DriveLetter+"\\").Start()
+	}()
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(`{"status":"opened"}`))
+}
+
+func (a *API) HandleInstallWinFsp(w http.ResponseWriter, r *http.Request) {
+	go func() {
+		_ = a.supervisor.DownloadAndLaunchWinFspInstaller()
+	}()
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(`{"status":"downloading_installer"}`))
 }
 
 type ShutdownRequest struct {
@@ -405,15 +698,9 @@ func (a *API) HandleShutdown(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewDecoder(r.Body).Decode(&req)
 
 	// Unmount all mounted drives cleanly
-	drives := a.store.GetAllDrives()
-	for _, d := range drives {
-		if a.supervisor.IsMounted(d.ID) {
-			_ = a.supervisor.UnmountDrive(d.ID)
-		}
-	}
+	a.supervisor.UnmountAll()
 
 	if req.WithWinFsp {
-		// Stop WinFsp Launcher service in background
 		go func() {
 			_ = exec.Command("net", "stop", "WinFsp.Launcher").Run()
 		}()
@@ -422,11 +709,8 @@ func (a *API) HandleShutdown(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Write([]byte(`{"status":"shutting_down"}`))
 
-	// Exit process after short delay so HTTP client receives 200 OK
 	go func() {
 		time.Sleep(500 * time.Millisecond)
 		os.Exit(0)
 	}()
 }
-
-
