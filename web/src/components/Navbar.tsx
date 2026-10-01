@@ -55,10 +55,11 @@ export const Navbar: React.FC<NavbarProps> = ({
           <button
             type="button"
             onClick={onToggleTheme}
-            className="p-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 transition-colors"
-            title={`Mode Tampilan: ${theme} (Klik untuk ganti)`}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 transition-colors"
+            title={`Mode Tampilan: ${theme} (Klik untuk ganti: Sistem / Gelap / Terang)`}
           >
             {renderThemeIcon()}
+            <span className="capitalize hidden sm:inline">{theme === 'system' ? 'Sistem' : theme === 'dark' ? 'Dark' : 'Light'}</span>
           </button>
 
           {/* Refresh Button */}

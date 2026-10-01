@@ -99,8 +99,11 @@ func StartTray(webURL string, onExit func(withWinFsp bool)) {
 	hInst, _, _ := procGetModuleHandleW.Call(0)
 	hInstance := syscall.Handle(hInst)
 
-	// Standard application icon from Windows
-	hIcon, _, _ := procLoadIconW.Call(0, uintptr(32512)) // IDI_APPLICATION
+	// Load custom application icon from embedded resource ID 1
+	hIcon, _, _ := procLoadIconW.Call(uintptr(hInstance), uintptr(1))
+	if hIcon == 0 {
+		hIcon, _, _ = procLoadIconW.Call(0, uintptr(32512)) // IDI_APPLICATION fallback
+	}
 
 	var hwnd syscall.Handle
 	var nid notifyIconData
