@@ -2,12 +2,14 @@ package tray
 
 import (
 	_ "embed"
+	"fmt"
 	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"syscall"
+	"time"
 
 	"gdrive-supply/internal/logger"
 )
@@ -26,20 +28,11 @@ func StartTray(webURL string, localToken string, onExit func(withWinFsp bool)) {
 	tempDir := os.TempDir()
 	targetPath := filepath.Join(tempDir, "gdrive-supply-tray.exe")
 
-	// Write tray_helper.exe to temp if not exists or size differs
-	needWrite := true
-	if fi, err := os.Stat(targetPath); err == nil {
-		if fi.Size() == int64(len(trayHelperExe)) {
-			needWrite = false
-		}
-	}
-
-	if needWrite {
-		if err := os.WriteFile(targetPath, trayHelperExe, 0755); err != nil {
-			logger.Warn("Gagal menulis tray helper ke temp: %v, mencoba lokasi saat ini", err)
-			targetPath = "gdrive-supply-tray.exe"
-			_ = os.WriteFile(targetPath, trayHelperExe, 0755)
-		}
+	// Always write fresh helper binary to temp
+	_ = os.Remove(targetPath)
+	if err := os.WriteFile(targetPath, trayHelperExe, 0755); err != nil {
+		targetPath = filepath.Join(os.TempDir(), fmt.Sprintf("gdrive-tray-%d.exe", time.Now().Unix()))
+		_ = os.WriteFile(targetPath, trayHelperExe, 0755)
 	}
 
 	pid := os.Getpid()

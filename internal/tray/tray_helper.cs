@@ -3,11 +3,18 @@ using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Net;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Windows.Forms;
 
 public class TrayHelperApp {
+    [DllImport("user32.dll", SetLastError = true)]
+    static extern IntPtr OpenDesktop(string lpszDesktop, uint dwFlags, bool fInherit, uint dwDesiredAccess);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    static extern bool SetThreadDesktop(IntPtr hDesktop);
+
     private static NotifyIcon trayIcon;
     private static string apiBase = "http://127.0.0.1:4040";
     private static string localToken = "";
@@ -15,6 +22,13 @@ public class TrayHelperApp {
 
     [STAThread]
     public static void Main(string[] args) {
+        // Ensure thread is attached to user's interactive Default desktop
+        try {
+            IntPtr hDef = OpenDesktop("Default", 0, false, 0x01FF);
+            if (hDef != IntPtr.Zero) {
+                SetThreadDesktop(hDef);
+            }
+        } catch { }
         string iconPath = null;
         for (int i = 0; i < args.Length; i++) {
             if (args[i] == "--port" && i + 1 < args.Length) {
@@ -55,6 +69,10 @@ public class TrayHelperApp {
 
         trayIcon.ContextMenu = menu;
         trayIcon.Visible = true;
+
+        try {
+            trayIcon.ShowBalloonTip(3000, "GDrive Supply Aktif", "Drive Google Cloud siap digunakan. Klik 2x untuk membuka web dashboard.", ToolTipIcon.Info);
+        } catch { }
 
         // Double click opens web dashboard
         trayIcon.DoubleClick += (s, e) => OpenWeb();

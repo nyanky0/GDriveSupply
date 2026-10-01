@@ -86,24 +86,23 @@ def create_gdrive_monochrome_image(size=512):
     # Face 2 (Bottom: Slate -> Dark Slate)
     layer_bottom = Image.new('RGBA', (hi_w, hi_h), (0, 0, 0, 0))
     d_b = ImageDraw.Draw(layer_bottom)
-    # Gradient from left to right
     for x in range(int(0.22 * hi_w), int(hi_w)):
         t = (x - 0.22 * hi_w) / (0.78 * hi_w)
         t = max(0.0, min(1.0, t))
-        c = int(100 - t * 65)  # 100 -> 35
+        c = int(175 - t * 95)  # 175 -> 80
         d_b.line([(x, 0), (x, hi_h)], fill=(c, c, int(c * 1.05), 255), width=1)
     mask_bottom = Image.new('L', (hi_w, hi_h), 0)
     ImageDraw.Draw(mask_bottom).polygon(p_bottom, fill=255)
     layer_bottom.putalpha(mask_bottom)
 
-    # Face 3 (Right: Dark Slate -> Deep Black)
+    # Face 3 (Right: Dark Slate -> Charcoal with visible edge)
     layer_right = Image.new('RGBA', (hi_w, hi_h), (0, 0, 0, 0))
     d_r = ImageDraw.Draw(layer_right)
     for y in range(int(0.08 * hi_h), int(0.91 * hi_h)):
         t = (y - 0.08 * hi_h) / (0.83 * hi_h)
         t = max(0.0, min(1.0, t))
-        c = int(50 - t * 40)  # 50 -> 10
-        d_r.line([(0, y), (hi_w, y)], fill=(c, c, int(c * 1.1), 255), width=1)
+        c = int(120 - t * 85)  # 120 -> 35
+        d_r.line([(0, y), (hi_w, y)], fill=(c, c, int(c * 1.08), 255), width=1)
     mask_right = Image.new('L', (hi_w, hi_h), 0)
     ImageDraw.Draw(mask_right).polygon(p_right, fill=255)
     layer_right.putalpha(mask_right)
@@ -114,7 +113,7 @@ def create_gdrive_monochrome_image(size=512):
     for y in range(int(0.08 * hi_h), int(0.64 * hi_h)):
         t = (y - 0.08 * hi_h) / (0.56 * hi_h)
         t = max(0.0, min(1.0, t))
-        c = int(255 - t * 110)  # 255 -> 145
+        c = int(255 - t * 65)  # 255 -> 190
         d_l.line([(0, y), (hi_w, y)], fill=(c, c, c, 255), width=1)
     mask_left = Image.new('L', (hi_w, hi_h), 0)
     ImageDraw.Draw(mask_left).polygon(p_left, fill=255)
@@ -124,6 +123,13 @@ def create_gdrive_monochrome_image(size=512):
     hi_img.alpha_composite(layer_bottom)
     hi_img.alpha_composite(layer_right)
     hi_img.alpha_composite(layer_left)
+
+    # Draw crisp anti-aliased edge outlines for maximum visibility on dark taskbars
+    d_outline = ImageDraw.Draw(hi_img)
+    stroke_w = max(2, int(hi_w * 0.008))
+    d_outline.line(p_bottom + [p_bottom[0]], fill=(220, 225, 235, 180), width=stroke_w)
+    d_outline.line(p_right + [p_right[0]], fill=(240, 245, 255, 220), width=stroke_w)
+    d_outline.line(p_left + [p_left[0]], fill=(255, 255, 255, 255), width=stroke_w)
 
     # Downsample with high quality Lanczos filter for crisp anti-aliasing
     final_img = hi_img.resize((size, size), Image.Resampling.LANCZOS)
