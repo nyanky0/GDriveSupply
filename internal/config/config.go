@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 	"time"
 	"unicode"
@@ -196,7 +197,7 @@ func (s *Store) GetDrive(id string) (*DriveConfig, bool) {
 	return &copy, true
 }
 
-// GetAllDrives retrieves all drives
+// GetAllDrives retrieves all drives sorted deterministically by DriveLetter
 func (s *Store) GetAllDrives() []*DriveConfig {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -206,6 +207,11 @@ func (s *Store) GetAllDrives() []*DriveConfig {
 		copy := *d
 		list = append(list, &copy)
 	}
+
+	sort.Slice(list, func(i, j int) bool {
+		return list[i].DriveLetter < list[j].DriveLetter
+	})
+
 	return list
 }
 

@@ -12,6 +12,7 @@ import { LockScreen } from './components/LockScreen';
 import { SecuritySettingsModal } from './components/SecuritySettingsModal';
 import { LegalModal } from './components/LegalModal';
 import { LogsModal } from './components/LogsModal';
+import { ErrorDrivesBox } from './components/ErrorDrivesBox';
 import { HardDrive, Plus, BookOpen, AlertCircle, CheckCircle2 } from 'lucide-react';
 import type { DriveAccount, SystemStatus, GoogleCredential, AuthStatus } from './types';
 
@@ -279,6 +280,18 @@ export function App() {
     fetchStatus();
   };
 
+  const handleReauth = (drive: DriveAccount) => {
+    const letter = drive.driveLetter;
+    const name = drive.volumeLabel || drive.accountName || 'Google Drive';
+    const reauthId = drive.id;
+    window.location.href = `/api/auth/start?letter=${encodeURIComponent(letter)}&name=${encodeURIComponent(name)}&reauth_id=${encodeURIComponent(reauthId)}`;
+  };
+
+  // Deterministic stable sorting by DriveLetter
+  const sortedDrives = [...drives].sort((a, b) => a.driveLetter.localeCompare(b.driveLetter));
+  const activeDrives = sortedDrives.filter((d) => d.status !== 'error');
+  const errorDrives = sortedDrives.filter((d) => d.status === 'error');
+
   // If password lock is active and user is not authenticated
   const isLocked = authStatus.passwordEnabled && !authStatus.authenticated;
 
@@ -346,15 +359,15 @@ export function App() {
           onOpenTutorial={() => setIsTutorialModalOpen(true)}
         />
 
-        {/* Drive Cards Section */}
+        {/* Section 1: Daftar Google Drive Terpasang (Aktif) */}
         <section className="space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="text-base font-semibold text-slate-900 dark:text-white flex items-center gap-2">
               <HardDrive className="w-5 h-5 text-slate-700 dark:text-slate-300" />
-              Daftar Google Drive Terpasang
+              Daftar Google Drive Terpasang (Aktif)
             </h2>
             <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">
-              Total {drives.length} Akun
+              {activeDrives.length} Akun Aktif
             </span>
           </div>
 
@@ -364,9 +377,9 @@ export function App() {
                 <div key={i} className="h-44 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 animate-pulse" />
               ))}
             </div>
-          ) : drives.length > 0 ? (
+          ) : activeDrives.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-              {drives.map((drive) => (
+              {activeDrives.map((drive) => (
                 <DriveCard
                   key={drive.id}
                   drive={drive}
@@ -379,41 +392,58 @@ export function App() {
                 />
               ))}
             </div>
-          ) : (
-            /* Empty State */
-            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 p-12 text-center max-w-lg mx-auto space-y-4">
-              <div className="w-14 h-14 bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-2xl flex items-center justify-center mx-auto shadow-xs">
-                <HardDrive className="w-7 h-7" />
-              </div>
-              <div className="space-y-1">
-                <h3 className="font-semibold text-slate-900 dark:text-white text-lg">Belum Ada Drive Terpasang</h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                  Hubungkan akun Google Drive Anda untuk menjadikannya partisi harddisk lokal di Windows File Explorer.
-                </p>
-              </div>
-
-              <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => setIsTutorialModalOpen(true)}
-                  className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl transition-colors cursor-pointer"
-                >
-                  <BookOpen className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
-                  <span>Lihat Panduan Setup</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setIsAddModalOpen(true)}
-                  className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-medium text-white dark:text-slate-900 bg-slate-900 dark:bg-white hover:bg-slate-800 dark:hover:bg-slate-100 rounded-xl shadow-xs transition-colors cursor-pointer"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>Tambah Drive Pertama</span>
-                </button>
-              </div>
+          ) : drives.length > 0 ? (
+            <div className="p-6 bg-slate-100/70 dark:bg-slate-900/60 rounded-2xl border border-slate-200 dark:border-slate-800 text-center text-xs text-slate-500 dark:text-slate-400">
+              Tidak ada drive aktif saat ini. Periksa daftar drive yang membutuhkan perhatian di bawah.
             </div>
-          )}
+          ) : null}
         </section>
+
+        {/* Section 2: Box Khusus Drive Bermasalah / Mati */}
+        <ErrorDrivesBox
+          errorDrives={errorDrives}
+          onReauth={handleReauth}
+          onMount={handleMount}
+          onDelete={handleDelete}
+          onOpenLogs={() => setIsLogsModalOpen(true)}
+          onOpenTutorial={() => setIsTutorialModalOpen(true)}
+          isActionLoadingId={actionLoadingId}
+        />
+
+        {/* Global Empty State (If absolutely no drives exist) */}
+        {!isLoading && drives.length === 0 && (
+          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 p-12 text-center max-w-lg mx-auto space-y-4">
+            <div className="w-14 h-14 bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-2xl flex items-center justify-center mx-auto shadow-xs">
+              <HardDrive className="w-7 h-7" />
+            </div>
+            <div className="space-y-1">
+              <h3 className="font-semibold text-slate-900 dark:text-white text-lg">Belum Ada Drive Terpasang</h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                Hubungkan akun Google Drive Anda untuk menjadikannya partisi harddisk lokal di Windows File Explorer.
+              </p>
+            </div>
+
+            <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
+              <button
+                type="button"
+                onClick={() => setIsTutorialModalOpen(true)}
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl transition-colors cursor-pointer"
+              >
+                <BookOpen className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
+                <span>Lihat Panduan Setup</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setIsAddModalOpen(true)}
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-medium text-white dark:text-slate-900 bg-slate-900 dark:bg-white hover:bg-slate-800 dark:hover:bg-slate-100 rounded-xl shadow-xs transition-colors cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Tambah Drive Pertama</span>
+              </button>
+            </div>
+          </div>
+        )}
       </main>
 
       {/* Footer */}

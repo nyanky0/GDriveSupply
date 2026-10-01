@@ -401,6 +401,8 @@ func (a *API) HandleAuthStart(w http.ResponseWriter, r *http.Request) {
 		name = "Google Drive"
 	}
 
+	reauthID := r.URL.Query().Get("reauth_id")
+
 	redirectURL := fmt.Sprintf("http://%s/api/auth/callback", r.Host)
 	oauthConf := &oauth2.Config{
 		ClientID:     clientID,
@@ -414,7 +416,7 @@ func (a *API) HandleAuthStart(w http.ResponseWriter, r *http.Request) {
 		Endpoint: google.Endpoint,
 	}
 
-	statePayload := fmt.Sprintf("%s|%s", letter, name)
+	statePayload := fmt.Sprintf("%s|%s|%s", letter, name, reauthID)
 	authURL := oauthConf.AuthCodeURL(
 		statePayload,
 		oauth2.AccessTypeOffline,
@@ -441,12 +443,17 @@ func (a *API) HandleAuthCallback(w http.ResponseWriter, r *http.Request) {
 
 	letter := "X:"
 	volumeLabel := "Google Drive"
+	var reauthID string
+
 	parts := strings.Split(state, "|")
 	if len(parts) >= 1 && parts[0] != "" {
 		letter = parts[0]
 	}
 	if len(parts) >= 2 && parts[1] != "" {
 		volumeLabel = parts[1]
+	}
+	if len(parts) >= 3 && parts[2] != "" {
+		reauthID = parts[2]
 	}
 
 	clientID, clientSecret, err := a.store.GetCredentials()
@@ -512,24 +519,58 @@ func (a *API) HandleAuthCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	driveCfg := &config.DriveConfig{
-		ID:              userID,
-		Email:           email,
-		AccountName:     accountName,
-		VolumeLabel:     volumeLabel,
-		DriveLetter:     letter,
-		RefreshTokenEnc: encRefresh,
-		TotalStorage:    totalStorage,
-		UsedStorage:     usedStorage,
-		Status:          "unmounted",
-		ConnectedAt:     time.Now(),
-		LastSynced:      time.Now(),
+	// Determine target drive ID to update or create
+	targetID := userID
+	if reauthID != "" {
+		targetID = reauthID
+	} else {
+		// Look up existing by email or drive letter
+		for _, d := range a.store.GetAllDrives() {
+			if d.Email == email || d.DriveLetter == letter {
+				targetID = d.ID
+				break
+			}
+		}
+	}
+
+	driveCfg, exists := a.store.GetDrive(targetID)
+	if !exists {
+		driveCfg = &config.DriveConfig{
+			ID:          targetID,
+			ConnectedAt: time.Now(),
+		}
+	}
+
+	// Preserve existing volume label if user had already customized it
+	if exists && driveCfg.VolumeLabel != "" && volumeLabel == "Google Drive" {
+		volumeLabel = driveCfg.VolumeLabel
+	}
+
+	driveCfg.Email = email
+	driveCfg.AccountName = accountName
+	driveCfg.VolumeLabel = volumeLabel
+	driveCfg.DriveLetter = letter
+	driveCfg.RefreshTokenEnc = encRefresh
+	driveCfg.TotalStorage = totalStorage
+	driveCfg.UsedStorage = usedStorage
+	driveCfg.Status = "unmounted"
+	driveCfg.ErrorMessage = ""
+	driveCfg.LastSynced = time.Now()
+
+	// Clean up duplicate entries that shared this same email or drive letter
+	for _, d := range a.store.GetAllDrives() {
+		if d.ID != driveCfg.ID && (d.Email == email || d.DriveLetter == letter) {
+			_ = a.supervisor.UnmountDrive(d.ID)
+			_ = a.store.DeleteDrive(d.ID)
+		}
 	}
 
 	if err := a.store.SaveDrive(driveCfg); err != nil {
 		http.Redirect(w, r, fmt.Sprintf("/?auth=error&message=Save+failed:+%s", err.Error()), http.StatusTemporaryRedirect)
 		return
 	}
+
+	logger.Get().Infof("AUTH", "Otorisasi akun %s berhasil diperbarui untuk drive %s. Memasang partisi...", email, letter)
 
 	// Auto-mount immediately
 	mountErr := a.supervisor.MountDrive(driveCfg, clientID, clientSecret, tok.RefreshToken)
