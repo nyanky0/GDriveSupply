@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, KeyRound, Check, AlertCircle, Save } from 'lucide-react';
+import { X, KeyRound, Check, AlertCircle, Save, Copy, ExternalLink, Globe } from 'lucide-react';
 import type { GoogleCredential } from '../types';
 
 interface CredentialsModalProps {
@@ -19,8 +19,15 @@ export const CredentialsModal: React.FC<CredentialsModalProps> = ({
   const [clientSecret, setClientSecret] = useState(credentials.clientSecret || '');
   const [isSaving, setIsSaving] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [copiedUri, setCopiedUri] = useState<string | null>(null);
 
   if (!isOpen) return null;
+
+  const copyUri = (uri: string) => {
+    navigator.clipboard.writeText(uri);
+    setCopiedUri(uri);
+    setTimeout(() => setCopiedUri(null), 2000);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -118,6 +125,46 @@ export const CredentialsModal: React.FC<CredentialsModalProps> = ({
               onChange={(e) => setClientSecret(e.target.value)}
               className="w-full px-3 py-2 text-xs font-mono rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-slate-400 dark:focus:ring-slate-500"
             />
+          </div>
+
+          {/* Wajib: Authorized Redirect URIs Info */}
+          <div className="p-3.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 rounded-xl space-y-2 text-xs">
+            <div className="flex items-center justify-between text-amber-900 dark:text-amber-300 font-medium">
+              <span className="flex items-center gap-1.5 font-semibold">
+                <Globe className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                Authorized Redirect URIs (Wajib di Google Console)
+              </span>
+              <a
+                href="https://console.cloud.google.com/apis/credentials"
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 text-[11px] text-amber-700 dark:text-amber-400 hover:underline"
+              >
+                <span>Google Console</span>
+                <ExternalLink className="w-3 h-3" />
+              </a>
+            </div>
+            <p className="text-[11px] text-amber-800/90 dark:text-amber-300/80 leading-relaxed">
+              Mencegah error <code className="px-1 py-0.5 bg-amber-200/60 dark:bg-amber-900/60 rounded font-mono font-bold">redirect_uri_mismatch</code>: Salin dan tambahkan <strong>KEDUA</strong> URL berikut ke bagian <em>Authorized redirect URIs</em> pada Client ID Anda di Google Console:
+            </p>
+            <div className="space-y-1.5 pt-1">
+              {[
+                'http://127.0.0.1:4040/api/auth/callback',
+                'http://localhost:4040/api/auth/callback',
+              ].map((uri) => (
+                <div key={uri} className="flex items-center justify-between gap-2 p-1.5 bg-white/80 dark:bg-slate-900/80 border border-amber-200/70 dark:border-amber-900/40 rounded-lg">
+                  <span className="font-mono text-[11px] text-slate-800 dark:text-slate-200 truncate select-all">{uri}</span>
+                  <button
+                    type="button"
+                    onClick={() => copyUri(uri)}
+                    className="shrink-0 inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded-md bg-amber-100 hover:bg-amber-200 dark:bg-amber-900/60 dark:hover:bg-amber-800 text-amber-800 dark:text-amber-200 transition-colors"
+                  >
+                    {copiedUri === uri ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                    <span>{copiedUri === uri ? 'Tersalin' : 'Salin'}</span>
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
 
           <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-end gap-2.5">

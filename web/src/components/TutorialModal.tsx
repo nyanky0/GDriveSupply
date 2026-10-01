@@ -8,16 +8,16 @@ interface TutorialModalProps {
   redirectUri: string;
 }
 
-export const TutorialModal: React.FC<TutorialModalProps> = ({ isOpen, onClose, redirectUri }) => {
+export const TutorialModal: React.FC<TutorialModalProps> = ({ isOpen, onClose }) => {
   const [currentStep, setCurrentStep] = useState(1);
-  const [copied, setCopied] = useState(false);
+  const [copiedUri, setCopiedUri] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    setCopiedUri(text);
+    setTimeout(() => setCopiedUri(null), 2000);
   };
 
   const steps = [
@@ -109,25 +109,27 @@ export const TutorialModal: React.FC<TutorialModalProps> = ({ isOpen, onClose, r
           <ol className="list-decimal list-inside space-y-1.5 text-xs text-slate-600 pl-1">
             <li>Klik <strong className="text-slate-900">+ Create Credentials</strong> ➜ Pilih <strong className="text-slate-900">OAuth client ID</strong>.</li>
             <li>Application type: Pilih <strong className="text-slate-900">Web application</strong>.</li>
-            <li>Pada bagian <strong>Authorized redirect URIs</strong>, masukkan URL lokal di bawah ini:</li>
+            <li>Pada bagian <strong>Authorized redirect URIs</strong>, klik <strong>+ ADD URI</strong> dan masukkan <strong>KEDUA</strong> URL berikut (wajib keduanya untuk mencegah error <code>redirect_uri_mismatch</code>):</li>
           </ol>
 
-          {/* Copyable Redirect URI */}
-          <div className="mt-2 flex items-center gap-2">
-            <input
-              type="text"
-              readOnly
-              value={redirectUri}
-              className="w-full px-3 py-1.5 text-xs font-mono bg-slate-100 border border-slate-300 rounded-lg text-slate-800 focus:outline-hidden"
-            />
-            <button
-              type="button"
-              onClick={() => copyToClipboard(redirectUri)}
-              className="shrink-0 inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
-            >
-              {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-              <span>{copied ? 'Tersalin' : 'Salin URI'}</span>
-            </button>
+          {/* Copyable Redirect URIs */}
+          <div className="space-y-1.5 pt-1">
+            {[
+              'http://127.0.0.1:4040/api/auth/callback',
+              'http://localhost:4040/api/auth/callback',
+            ].map((uri) => (
+              <div key={uri} className="flex items-center justify-between gap-2 p-1.5 bg-slate-100 border border-slate-300 rounded-lg">
+                <span className="font-mono text-xs text-slate-800 truncate select-all">{uri}</span>
+                <button
+                  type="button"
+                  onClick={() => copyToClipboard(uri)}
+                  className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors"
+                >
+                  {copiedUri === uri ? <Check className="w-3.5 h-3.5 text-white" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span>{copiedUri === uri ? 'Tersalin' : 'Salin URI'}</span>
+                </button>
+              </div>
+            ))}
           </div>
         </div>
       ),

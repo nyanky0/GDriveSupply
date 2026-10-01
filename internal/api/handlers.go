@@ -404,6 +404,7 @@ func (a *API) HandleAuthStart(w http.ResponseWriter, r *http.Request) {
 	reauthID := r.URL.Query().Get("reauth_id")
 
 	redirectURL := fmt.Sprintf("http://%s/api/auth/callback", r.Host)
+	logger.Get().Infof("AUTH", "Memulai Google OAuth. Redirect URI yang dikirim: %s (Pastikan terdaftar di Google Cloud Console)", redirectURL)
 	oauthConf := &oauth2.Config{
 		ClientID:     clientID,
 		ClientSecret: clientSecret,
