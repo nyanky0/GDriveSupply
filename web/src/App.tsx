@@ -1,0 +1,409 @@
+import { useState, useEffect, useCallback } from 'react';
+import { Navbar, type ThemeMode } from './components/Navbar';
+import { StorageOverview } from './components/StorageOverview';
+import { DriveCard } from './components/DriveCard';
+import { AddDriveModal } from './components/AddDriveModal';
+import { TutorialModal } from './components/TutorialModal';
+import { CredentialsModal } from './components/CredentialsModal';
+import { RenameDriveModal } from './components/RenameDriveModal';
+import { ShutdownModal } from './components/ShutdownModal';
+import { AntiBannedModal } from './components/AntiBannedModal';
+import { HardDrive, Plus, BookOpen, AlertCircle, CheckCircle2 } from 'lucide-react';
+import type { DriveAccount, SystemStatus, GoogleCredential } from './types';
+
+export function App() {
+  const [drives, setDrives] = useState<DriveAccount[]>([]);
+  const [systemStatus, setSystemStatus] = useState<SystemStatus>({
+    totalStorage: 0,
+    usedStorage: 0,
+    freeStorage: 0,
+    activeDrivesCount: 0,
+    availableLetters: ['G:', 'H:', 'X:', 'Y:', 'Z:'],
+  });
+  const [credentials, setCredentials] = useState<GoogleCredential>({
+    clientId: '',
+    clientSecret: '',
+    configured: false,
+  });
+
+  const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
+  const [isInstallingWinFsp, setIsInstallingWinFsp] = useState(false);
+
+  // Theme Management (Default: system)
+  const [theme, setTheme] = useState<ThemeMode>(() => {
+    const saved = localStorage.getItem('gdrive_supply_theme') as ThemeMode;
+    return saved === 'dark' || saved === 'light' || saved === 'system' ? saved : 'system';
+  });
+
+  useEffect(() => {
+    const root = document.documentElement;
+    const media = window.matchMedia('(prefers-color-scheme: dark)');
+
+    const applyTheme = () => {
+      const isDark = theme === 'dark' || (theme === 'system' && media.matches);
+      if (isDark) {
+        root.classList.add('dark');
+      } else {
+        root.classList.remove('dark');
+      }
+    };
+
+    applyTheme();
+    localStorage.setItem('gdrive_supply_theme', theme);
+
+    const listener = () => {
+      if (theme === 'system') applyTheme();
+    };
+    media.addEventListener('change', listener);
+    return () => media.removeEventListener('change', listener);
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setTheme((prev) => {
+      if (prev === 'system') return 'dark';
+      if (prev === 'dark') return 'light';
+      return 'system';
+    });
+  };
+
+  // Modals
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isTutorialModalOpen, setIsTutorialModalOpen] = useState(false);
+  const [isCredentialsModalOpen, setIsCredentialsModalOpen] = useState(false);
+  const [renameTargetDrive, setRenameTargetDrive] = useState<DriveAccount | null>(null);
+  const [isShutdownOpen, setIsShutdownOpen] = useState(false);
+  const [isAntiBannedOpen, setIsAntiBannedOpen] = useState(false);
+
+  // Toast Notification
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+    setToast({ type, message });
+    setTimeout(() => setToast(null), 3500);
+  };
+
+  const fetchStatus = useCallback(async () => {
+    try {
+      const res = await fetch('/api/status');
+      if (res.ok) {
+        const data = await res.json();
+        setDrives(data.drives || []);
+        setSystemStatus(data.systemStatus || {
+          totalStorage: 0,
+          usedStorage: 0,
+          freeStorage: 0,
+          activeDrivesCount: 0,
+          availableLetters: ['G:', 'H:', 'X:', 'Y:', 'Z:'],
+        });
+        setCredentials(data.credentials || { clientId: '', clientSecret: '', configured: false });
+      }
+    } catch {
+      console.warn('Backend API currently unreachable, running in local preview mode.');
+    } finally {
+      setIsLoading(false);
+      setIsRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchStatus();
+    // Auto poll status every 10 seconds
+    const interval = setInterval(fetchStatus, 10000);
+    return () => clearInterval(interval);
+  }, [fetchStatus]);
+
+  // Handle URL query parameters for OAuth success/error callbacks
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const authStatus = params.get('auth');
+    const msg = params.get('message');
+    if (authStatus === 'success') {
+      showToast('Berhasil menghubungkan akun Google Drive!', 'success');
+      window.history.replaceState({}, document.title, window.location.pathname);
+      fetchStatus();
+    } else if (authStatus === 'error') {
+      showToast(msg || 'Gagal otorisasi akun Google.', 'error');
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }, [fetchStatus]);
+
+  const handleMount = async (id: string) => {
+    setActionLoadingId(id);
+    try {
+      const res = await fetch(`/api/drives/mount/${id}`, { method: 'POST' });
+      if (res.ok) {
+        showToast('Drive berhasil dipasang ke Windows File Explorer.');
+        await fetchStatus();
+      } else {
+        const err = await res.json();
+        showToast(err.message || 'Gagal memasang drive.', 'error');
+      }
+    } catch {
+      showToast('Gagal menghubungi service.', 'error');
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
+  const handleUnmount = async (id: string) => {
+    setActionLoadingId(id);
+    try {
+      const res = await fetch(`/api/drives/unmount/${id}`, { method: 'POST' });
+      if (res.ok) {
+        showToast('Drive berhasil dilepas.');
+        await fetchStatus();
+      } else {
+        const err = await res.json();
+        showToast(err.message || 'Gagal melepas drive.', 'error');
+      }
+    } catch {
+      showToast('Gagal menghubungi service.', 'error');
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
+  const handleOpenExplorer = async (driveLetter: string) => {
+    try {
+      await fetch(`/api/drives/open/${driveLetter.replace(':', '')}`, { method: 'POST' });
+    } catch {
+      showToast(`Gagal membuka drive ${driveLetter}`, 'error');
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Apakah Anda yakin ingin menghapus akun ini dari daftar drive?')) return;
+    setActionLoadingId(id);
+    try {
+      const res = await fetch(`/api/drives/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        showToast('Akun Google Drive berhasil dihapus.');
+        await fetchStatus();
+      } else {
+        showToast('Gagal menghapus drive.', 'error');
+      }
+    } catch {
+      showToast('Gagal menghubungi service.', 'error');
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
+  const handleSaveCredentials = async (clientId: string, clientSecret: string): Promise<boolean> => {
+    try {
+      const res = await fetch('/api/config/credentials', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clientId, clientSecret }),
+      });
+      if (res.ok) {
+        await fetchStatus();
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  };
+
+  const handleStartAuth = (driveLetter: string, accountName: string) => {
+    const encodedLetter = encodeURIComponent(driveLetter);
+    const encodedName = encodeURIComponent(accountName);
+    window.location.href = `/api/auth/start?letter=${encodedLetter}&name=${encodedName}`;
+  };
+
+  const handleInstallWinFsp = async () => {
+    setIsInstallingWinFsp(true);
+    try {
+      const res = await fetch('/api/winfsp/install', { method: 'POST' });
+      if (res.ok) {
+        showToast('Installer WinFsp berhasil dibuka! Silakan ikuti instruksi di layar komputer Anda.');
+      } else {
+        const err = await res.json();
+        showToast(err.error || 'Gagal membuka installer WinFsp.', 'error');
+      }
+    } catch {
+      showToast('Gagal menghubungi service lokal.', 'error');
+    } finally {
+      setIsInstallingWinFsp(false);
+    }
+  };
+
+  const handleDriveRenamed = (updated: DriveAccount) => {
+    setDrives((prev) => prev.map((d) => (d.id === updated.id ? updated : d)));
+    showToast(`Nama drive berhasil diubah menjadi "${updated.volumeLabel || updated.accountName}"`);
+    fetchStatus();
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col transition-colors">
+      <Navbar
+        onOpenTutorial={() => setIsTutorialModalOpen(true)}
+        onOpenCredentials={() => setIsCredentialsModalOpen(true)}
+        onOpenAddDrive={() => setIsAddModalOpen(true)}
+        onOpenShutdown={() => setIsShutdownOpen(true)}
+        onOpenAntiBanned={() => setIsAntiBannedOpen(true)}
+        onRefresh={() => {
+          setIsRefreshing(true);
+          fetchStatus();
+        }}
+        isRefreshing={isRefreshing}
+        credentialsConfigured={credentials.configured}
+        theme={theme}
+        onToggleTheme={toggleTheme}
+      />
+
+      {/* Toast Alert */}
+      {toast && (
+        <div className="fixed bottom-6 right-6 z-50 animate-slide-up">
+          <div
+            className={`px-4 py-3 rounded-2xl shadow-xl border text-xs font-medium flex items-center gap-2.5 ${
+              toast.type === 'success'
+                ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 border-slate-800 dark:border-slate-200'
+                : 'bg-rose-900 text-white border-rose-800'
+            }`}
+          >
+            {toast.type === 'success' ? (
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 dark:text-emerald-600 shrink-0" />
+            ) : (
+              <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+            )}
+            <span>{toast.message}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Main Content */}
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full flex-1 space-y-8">
+        {/* Storage Summary */}
+        <StorageOverview
+          status={systemStatus}
+          onInstallWinFsp={handleInstallWinFsp}
+          isInstallingWinFsp={isInstallingWinFsp}
+          onOpenTutorial={() => setIsTutorialModalOpen(true)}
+        />
+
+        {/* Drive Cards Section */}
+        <section className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-base font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+              <HardDrive className="w-5 h-5 text-slate-700 dark:text-slate-300" />
+              Daftar Google Drive Terpasang
+            </h2>
+            <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+              Total {drives.length} Akun
+            </span>
+          </div>
+
+          {isLoading ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="h-44 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 animate-pulse" />
+              ))}
+            </div>
+          ) : drives.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+              {drives.map((drive) => (
+                <DriveCard
+                  key={drive.id}
+                  drive={drive}
+                  onMount={handleMount}
+                  onUnmount={handleUnmount}
+                  onOpenExplorer={handleOpenExplorer}
+                  onRename={(d) => setRenameTargetDrive(d)}
+                  onDelete={handleDelete}
+                  isActionLoading={actionLoadingId === drive.id}
+                />
+              ))}
+            </div>
+          ) : (
+            /* Empty State */
+            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 p-12 text-center max-w-lg mx-auto space-y-4">
+              <div className="w-14 h-14 bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-2xl flex items-center justify-center mx-auto shadow-xs">
+                <HardDrive className="w-7 h-7" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="font-semibold text-slate-900 dark:text-white text-lg">Belum Ada Drive Terpasang</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                  Hubungkan akun Google Drive Anda untuk menjadikannya partisi harddisk lokal di Windows File Explorer.
+                </p>
+              </div>
+
+              <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setIsTutorialModalOpen(true)}
+                  className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl transition-colors"
+                >
+                  <BookOpen className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
+                  <span>Lihat Panduan Setup</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setIsAddModalOpen(true)}
+                  className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-medium text-white dark:text-slate-900 bg-slate-900 dark:bg-white hover:bg-slate-800 dark:hover:bg-slate-100 rounded-xl shadow-xs transition-colors"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Tambah Drive Pertama</span>
+                </button>
+              </div>
+            </div>
+          )}
+        </section>
+      </main>
+
+      {/* Footer */}
+      <footer className="border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 py-4 mt-auto transition-colors">
+        <div className="max-w-7xl mx-auto px-4 text-center text-xs text-slate-500 dark:text-slate-400 flex flex-col sm:flex-row items-center justify-between gap-2">
+          <span>GDrive Supply • Direct Client-to-Cloud Service • Zero-VPS Bandwidth</span>
+          <span className="font-mono text-[11px] text-slate-400 dark:text-slate-500">Windows File System Proxy (WinFsp)</span>
+        </div>
+      </footer>
+
+      {/* Modals */}
+      <AddDriveModal
+        isOpen={isAddModalOpen}
+        onClose={() => setIsAddModalOpen(false)}
+        availableLetters={systemStatus.availableLetters}
+        credentials={credentials}
+        onSaveCredentials={handleSaveCredentials}
+        onStartAuth={handleStartAuth}
+      />
+
+      <TutorialModal
+        isOpen={isTutorialModalOpen}
+        onClose={() => setIsTutorialModalOpen(false)}
+        redirectUri={`${window.location.origin}/api/auth/callback`}
+      />
+
+      <CredentialsModal
+        isOpen={isCredentialsModalOpen}
+        onClose={() => setIsCredentialsModalOpen(false)}
+        credentials={credentials}
+        onSave={handleSaveCredentials}
+      />
+
+      <RenameDriveModal
+        isOpen={!!renameTargetDrive}
+        drive={renameTargetDrive}
+        onClose={() => setRenameTargetDrive(null)}
+        onRenamed={handleDriveRenamed}
+      />
+
+      <ShutdownModal
+        isOpen={isShutdownOpen}
+        onClose={() => setIsShutdownOpen(false)}
+      />
+
+      <AntiBannedModal
+        isOpen={isAntiBannedOpen}
+        onClose={() => setIsAntiBannedOpen(false)}
+      />
+    </div>
+  );
+}
+
+export default App;

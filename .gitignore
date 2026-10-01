@@ -1,0 +1,43 @@
+# ==========================================
+# GDrive Supply - Git Ignore Rules
+# ==========================================
+
+# 1. Credentials, Tokens & Secrets (STRICTLY IGNORED)
+config.json
+*.conf
+rclone_*.conf
+credentials.json
+client_secret*.json
+*.token
+*.env
+*.env.*
+*.pem
+*.key
+
+# 2. Binaries & Executables
+*.exe
+*.exe~
+*.dll
+*.msi
+bin/*.exe
+bin/*.conf
+bin/*.msi
+!bin/.gitkeep
+
+# 3. Web & Node.js Dependencies
+web/node_modules/
+web/dist/
+web/.vite/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# 4. OS & IDE Artifacts
+.DS_Store
+Thumbs.db
+*.log
+.vscode/
+.idea/
+*.swp
+*.bak
+scratch/
