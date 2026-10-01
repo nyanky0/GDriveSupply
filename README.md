@@ -94,6 +94,18 @@ Setiap akun memiliki partisi drive tersendiri dengan kapasitas penuh (misalnya 5
     - Menangkap langsung *stdout* & *stderr* dari rclone VFS, proses mount WinFsp, supervisor, dan request API secara granular.
     - Dilengkapi **Live Terminal Modal** di Web Dashboard: filter level (ALL / ERROR / WARN / INFO / DEBUG), pencarian kata kunci, pause/play live-tail, 1-klik salin ke clipboard, dan tombol unduh file `.log` mentah untuk kemudahan pelaporan bug/feedback.
 
+13. **Layout Tabulasi Terpadu (Kelola Drive vs Dokumentasi & Solusi Masalah)**
+    - Bilah navigasi (Navbar) dirampingkan secara elegan dengan memindahkan seluruh dokumentasi, panduan, status anti-banned, dan legal ke dalam tabulasi baru **Dokumentasi & Solusi**.
+    - Memisahkan tampilan operasional harian (*Kelola Drive*) dari pusat bantuan teknis (*Pusat Dokumentasi & Solusi*).
+
+14. **Katalog Masalah & Solusi Instan (Built-in Troubleshooting)**
+    - Tab Dokumentasi memuat database troubleshooting interaktif yang mencakup akar masalah (*root cause*) dan langkah pemulihan untuk error:
+      - `Error 400: redirect_uri_mismatch` (panduan Authorized redirect URIs `127.0.0.1` & `localhost`).
+      - `oauth2: "unauthorized_client" "Unauthorized"` (pembaruan in-place 1-klik).
+      - `Access blocked: GDApp has not completed verification` (panduan pendaftaran Test users).
+      - Driver WinFsp belum terpasang (installer & winget command).
+      - Single-instance Named Mutex guard & zero-residual password reset.
+
 ---
 
 ## 🛠️ Prasyarat Sistem
@@ -139,11 +151,17 @@ Jika status publishing aplikasi masih dalam mode **Testing**, Google mewajibkan 
 2. Klik **+ CREATE CREDENTIALS** ➔ pilih **OAuth client ID**.
 3. Pilih Application type: **Web application**.
 4. Isi Name: `GDrive Supply Local Client`.
-5. Di bagian **Authorized redirect URIs**, klik **+ ADD URI** dan masukkan:
+5. Di bagian **Authorized redirect URIs**, klik **+ ADD URI** dan masukkan **KEDUA URL** berikut (wajib keduanya untuk mencegah error `redirect_uri_mismatch`):
    ```text
+   http://127.0.0.1:4040/api/auth/callback
    http://localhost:4040/api/auth/callback
    ```
-6. Klik **Create**. Salin **Client ID** dan **Client Secret** Anda, atau unduh file `credentials.json`.
+6. Di bagian **Authorized JavaScript origins**, masukkan:
+   ```text
+   http://127.0.0.1:4040
+   http://localhost:4040
+   ```
+7. Klik **Create**. Salin **Client ID** dan **Client Secret** Anda, lalu masukkan ke dalam menu *Kredensial API* di dashboard GDrive Supply.
 
 ---
 
