@@ -23,6 +23,7 @@ bin/*.exe
 bin/*.conf
 bin/*.msi
 !bin/.gitkeep
+!internal/tray/tray_helper.exe
 
 # 3. Web & Node.js Dependencies
 web/node_modules/

@@ -16,11 +16,20 @@ if (Test-Path "D:\Projects\go-sdk\go\bin\go.exe") {
     $goCmd = "C:\Program Files\Go\bin\go.exe"
 }
 
-# 1. Generate Icons & Windows Executable Resource (.syso)
-Write-Host "`n[1/3] Generating Icons & Windows .syso Resource..." -ForegroundColor Yellow
+# 1. Generate Icons, Windows Executable Resource (.syso) & System Tray Helper
+Write-Host "`n[1/3] Generating Icons, Resources & System Tray Helper..." -ForegroundColor Yellow
 Set-Location $projectRoot
 python "$projectRoot\scripts\generate_icons.py"
 & $goCmd run github.com/akavel/rsrc@latest -ico "$projectRoot\cmd\app\app.ico" -o "$projectRoot\cmd\app\rsrc_windows_amd64.syso"
+
+$cscPath = "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
+if (-not (Test-Path $cscPath)) {
+    $cscPath = "C:\Windows\Microsoft.NET\Framework\v4.0.30319\csc.exe"
+}
+if (Test-Path $cscPath) {
+    Write-Host "Compiling embedded Windows System Tray helper..." -ForegroundColor Gray
+    & $cscPath /out:"$projectRoot\internal\tray\tray_helper.exe" /target:winexe /win32icon:"$projectRoot\cmd\app\app.ico" /r:System.Windows.Forms.dll,System.Drawing.dll "$projectRoot\internal\tray\tray_helper.cs" | Out-Null
+}
 
 # 2. Build Frontend
 Write-Host "`n[2/3] Building Vite + React Frontend..." -ForegroundColor Yellow

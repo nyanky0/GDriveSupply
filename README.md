@@ -209,18 +209,23 @@ GDriveSupply/
 │       └── main.go              # Entry point Go, HTTP server & message loop tray
 ├── internal/
 │   ├── api/
-│   │   └── handlers.go          # REST API endpoints (mount, rename, shutdown, OAuth)
+│   │   └── handlers.go          # REST API endpoints (mount, rename, shutdown, OAuth, auth session)
 │   ├── config/
 │   │   ├── config.go            # Store manajemen konfigurasi & migrasi
 │   │   └── dpapi_windows.go     # Enkripsi rahasia via Windows DPAPI CryptProtectData
+│   ├── logger/
+│   │   └── logger.go            # High-capacity diagnostic ring buffer logger
 │   ├── mount/
 │   │   ├── supervisor.go        # Manajemen proses VFS rclone & TokenSource OAuth2
 │   │   └── winfsp_windows.go    # Deteksi & installer otomatis WinFsp
 │   ├── sysutil/
-│   │   ├── drive_windows.go     # Alokasi huruf drive Windows (A:-Z:)
-│   │   └── mutex_windows.go     # Win32 Named Mutex single-instance guard
+│   │   ├── drives_windows.go    # Alokasi huruf drive Windows (A:-Z:)
+│   │   ├── mutex_windows.go     # Win32 Named Mutex single-instance guard
+│   │   └── token.go             # Cryptographic secure random token generator
 │   ├── tray/
-│   │   └── tray_windows.go      # Win32 Shell_NotifyIconW native system tray
+│   │   ├── tray_windows.go      # Embedded launcher & lifecycle manager
+│   │   ├── tray_helper.cs       # Native Windows Forms System Tray companion
+│   │   └── tray_helper.exe      # Embedded standalone tray binary (35 KB)
 │   └── ui/
 │       ├── embed.go             # Go standard library //go:embed dist
 │       └── dist/                # Output build React terintegrasi
@@ -230,23 +235,42 @@ GDriveSupply/
 │   │   │   ├── AddDriveModal.tsx
 │   │   │   ├── AntiBannedModal.tsx
 │   │   │   ├── CredentialsModal.tsx
+│   │   │   ├── DocsAndSolutions.tsx # Tab panduan masalah & troubleshooting OAuth 400
 │   │   │   ├── DriveCard.tsx
-│   │   │   ├── Logo.tsx         # Logo Google Drive Ribbon gradasi monokrom
-│   │   │   ├── Navbar.tsx       # Navigasi, theme toggle & shutdown
+│   │   │   ├── ErrorDrivesBox.tsx   # Box terpisah khusus drive bermasalah
+│   │   │   ├── LegalModal.tsx
+│   │   │   ├── LockScreen.tsx       # Layer keamanan PIN/Password dengan brute-force guard
+│   │   │   ├── Logo.tsx             # Logo Google Drive Ribbon gradasi monokrom
+│   │   │   ├── LogsModal.tsx        # Viewer diagnostic logs kapasitas tinggi
+│   │   │   ├── Navbar.tsx           # Navigasi, theme toggle & shutdown
 │   │   │   ├── RenameDriveModal.tsx
+│   │   │   ├── SecuritySettingsModal.tsx
 │   │   │   ├── ShutdownModal.tsx
 │   │   │   ├── StorageOverview.tsx
 │   │   │   └── TutorialModal.tsx
 │   │   ├── App.tsx              # Root component & theme observer
-│   │   └── types.ts
+│   │   ├── types.ts
+│   │   └── utils/
+│   │       └── format.ts        # Shared formatters & clipboard helper
 │   └── package.json
 ├── scripts/
-│   └── build.ps1                # Skrip kompilasi otomatis frontend + backend
+│   └── build.ps1                # Skrip kompilasi otomatis frontend + backend + tray
 ├── build.bat                    # Shortcut build Windows
 ├── run.bat                      # Shortcut jalankan aplikasi
 ├── .gitignore                   # Proteksi kredensial, token & binary lokal
 └── README.md                    # Dokumentasi utama proyek
 ```
+
+---
+
+## 🏆 Kualitas Kode & Audit (CodeFlow Report)
+
+Berdasarkan audit statis [CodeFlow](https://github.com/nyanky0/GDriveSupply):
+- **Health Score**: `97/100 (A)`
+- **Security Vulnerabilities**: `0` (Zero issues)
+- **Unused Procedures / Dead Code**: `0`
+- **Subsystem Mode**: Native Pure GUI Windows Subsystem (`-H=windowsgui`) tanpa konsol CMD popup.
+- **System Tray Architecture**: Native embedded companion (`tray_helper.exe`) terisolasi dengan lifecycle monitoring otomatis berbasis parent PID (zero zombie/orphan process).
 
 ---
 

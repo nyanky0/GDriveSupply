@@ -148,6 +148,19 @@ func (l *Logger) Debugf(module string, format string, args ...interface{}) {
 	l.Log(LevelDebug, module, fmt.Sprintf(format, args...))
 }
 
+// Package-level helpers
+func Info(format string, args ...interface{}) {
+	Get().Infof("APP", format, args...)
+}
+
+func Warn(format string, args ...interface{}) {
+	Get().Warnf("APP", format, args...)
+}
+
+func Error(format string, args ...interface{}) {
+	Get().Errorf("APP", format, args...)
+}
+
 // GetEntries returns log entries filtered by limit, level, and keyword
 func (l *Logger) GetEntries(limit int, minLevel string, keyword string) []Entry {
 	l.mu.RLock()

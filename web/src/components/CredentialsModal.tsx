@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { X, KeyRound, Check, AlertCircle, Save, Copy, ExternalLink, Globe } from 'lucide-react';
 import type { GoogleCredential } from '../types';
+import { copyToClipboard } from '../utils/format';
 
 interface CredentialsModalProps {
   isOpen: boolean;
@@ -24,7 +25,7 @@ export const CredentialsModal: React.FC<CredentialsModalProps> = ({
   if (!isOpen) return null;
 
   const copyUri = (uri: string) => {
-    navigator.clipboard.writeText(uri);
+    copyToClipboard(uri);
     setCopiedUri(uri);
     setTimeout(() => setCopiedUri(null), 2000);
   };

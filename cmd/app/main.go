@@ -71,10 +71,12 @@ func main() {
 		}
 	}
 
+	localTrayToken := sysutil.GenerateRandomToken(16)
+
 	mux := http.NewServeMux()
 
 	// Register API endpoints
-	apiHandler := api.NewAPI(store, supervisor)
+	apiHandler := api.NewAPI(store, supervisor, localTrayToken)
 	apiHandler.RegisterRoutes(mux)
 
 	// Serve embedded frontend
@@ -157,5 +159,5 @@ func main() {
 	}()
 
 	// Run native Windows System Tray on main thread
-	tray.StartTray(webURL, shutdownFunc)
+	tray.StartTray(webURL, localTrayToken, shutdownFunc)
 }

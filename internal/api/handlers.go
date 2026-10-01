@@ -25,12 +25,14 @@ import (
 type API struct {
 	store      *config.Store
 	supervisor *mount.Supervisor
+	localToken string
 }
 
-func NewAPI(store *config.Store, supervisor *mount.Supervisor) *API {
+func NewAPI(store *config.Store, supervisor *mount.Supervisor, localToken string) *API {
 	return &API{
 		store:      store,
 		supervisor: supervisor,
+		localToken: localToken,
 	}
 }
 
@@ -58,6 +60,12 @@ func clearSessionCookie(w http.ResponseWriter) {
 
 func (a *API) withAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		// Allow local tray companion with matching security token
+		if a.localToken != "" && r.Header.Get("X-Local-Tray-Token") == a.localToken {
+			next(w, r)
+			return
+		}
+
 		cookie, err := r.Cookie("gdrive_session")
 		var token string
 		if err == nil {

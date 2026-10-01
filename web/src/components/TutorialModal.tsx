@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { X, BookOpen, ExternalLink, Copy, Check, ChevronRight, ChevronLeft, AlertTriangle, UserPlus, CheckCircle2 } from 'lucide-react';
-
+import { copyToClipboard } from '../utils/format';
 
 interface TutorialModalProps {
   isOpen: boolean;
@@ -14,8 +14,8 @@ export const TutorialModal: React.FC<TutorialModalProps> = ({ isOpen, onClose })
 
   if (!isOpen) return null;
 
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
+  const handleCopy = (text: string) => {
+    copyToClipboard(text);
     setCopiedUri(text);
     setTimeout(() => setCopiedUri(null), 2000);
   };
@@ -122,7 +122,7 @@ export const TutorialModal: React.FC<TutorialModalProps> = ({ isOpen, onClose })
                 <span className="font-mono text-xs text-slate-800 truncate select-all">{uri}</span>
                 <button
                   type="button"
-                  onClick={() => copyToClipboard(uri)}
+                  onClick={() => handleCopy(uri)}
                   className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors"
                 >
                   {copiedUri === uri ? <Check className="w-3.5 h-3.5 text-white" /> : <Copy className="w-3.5 h-3.5" />}
