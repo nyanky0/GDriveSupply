@@ -106,6 +106,13 @@ Setiap akun memiliki partisi drive tersendiri dengan kapasitas penuh (misalnya 5
       - Driver WinFsp belum terpasang (installer & winget command).
       - Single-instance Named Mutex guard & zero-residual password reset.
 
+15. **Live Native Upload Monitor & Windows Transfer Dialog**
+    - Menyelesaikan masalah *"copy cepat tapi upload background tak terlihat"* saat paste berkas ke drive virtual lokal.
+    - Terintegrasi langsung dengan rclone Remote Control (`--rc`) dan native Windows Forms dialog yang sangat hemat memori (< 2 MB RAM).
+    - **Auto-Show & Auto-Hide**: Muncul otomatis di pojok kanan bawah desktop saat pengunggahan ke Google Cloud dimulai (tanpa mencuri fokus keyboard), menampilkan nama berkas, persentase progress bar, kecepatan (MB/s), ukuran tertransfer, dan estimasi sisa waktu (ETA).
+    - Otomatis menampilkan status selesai dan menutup diri begitu upload rampung.
+    - Terpantau secara real-time di Web Dashboard melalui widget live transfer.
+
 ---
 
 ## 🛠️ Prasyarat Sistem

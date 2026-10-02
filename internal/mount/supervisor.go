@@ -27,6 +27,7 @@ type ProcessEntry struct {
 	DriveLetter string
 	Cmd         *exec.Cmd
 	StartedAt   time.Time
+	RcPort      int
 }
 
 type Supervisor struct {
@@ -199,6 +200,14 @@ scope = drive
 	if volName == "" {
 		volName = fmt.Sprintf("GDrive_%s", strings.TrimSuffix(drive.DriveLetter, ":"))
 	}
+
+	letter := strings.ToUpper(strings.TrimSuffix(drive.DriveLetter, ":"))
+	rcPort := 5572
+	if len(letter) > 0 && letter[0] >= 'A' && letter[0] <= 'Z' {
+		rcPort = 5572 + int(letter[0]-'A')
+	}
+	rcAddr := fmt.Sprintf("127.0.0.1:%d", rcPort)
+
 	args := []string{
 		"mount",
 		fmt.Sprintf("%s:", drive.ID),
@@ -206,14 +215,18 @@ scope = drive
 		"--config", tempConf,
 		"--vfs-cache-mode", "full",
 		"--vfs-cache-max-size", "10G",
+		"--vfs-write-back", "2s",
 		"--vfs-read-chunk-size", "32M",
 		"--vfs-read-chunk-size-limit", "256M",
 		"--dir-cache-time", "1h",
 		"--volname", volName,
+		"--rc",
+		"--rc-addr", rcAddr,
+		"--rc-no-auth",
 		"-v",
 	}
 
-	logger.Get().Infof("MOUNT", "Menjalankan perintah rclone mount untuk drive %s (%s)...", drive.DriveLetter, drive.ID)
+	logger.Get().Infof("MOUNT", "Menjalankan perintah rclone mount untuk drive %s (%s, RC: %s)...", drive.DriveLetter, drive.ID, rcAddr)
 
 	cmd := exec.Command(s.rclonePath, args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{
@@ -274,6 +287,7 @@ scope = drive
 		DriveLetter: drive.DriveLetter,
 		Cmd:         cmd,
 		StartedAt:   time.Now(),
+		RcPort:      rcPort,
 	}
 
 	return nil
@@ -327,4 +341,168 @@ func (s *Supervisor) UnmountAll() {
 	}
 	s.processes = make(map[string]*ProcessEntry)
 }
+
+// TransferItem represents a single active file transfer reported by rclone RC
+type TransferItem struct {
+	Name           string `json:"name"`
+	DriveLetter    string `json:"driveLetter"`
+	Percentage     int    `json:"percentage"`
+	Bytes          int64  `json:"bytes"`
+	Size           int64  `json:"size"`
+	Speed          int64  `json:"speed"`
+	SpeedFormatted string `json:"speedFormatted"`
+	BytesFormatted string `json:"bytesFormatted"`
+	SizeFormatted  string `json:"sizeFormatted"`
+	Eta            int64  `json:"eta"`
+	EtaFormatted   string `json:"etaFormatted"`
+}
+
+// TransferStatus represents the aggregated live upload status across all mounted drives
+type TransferStatus struct {
+	Active         bool           `json:"active"`
+	TotalSpeed     int64          `json:"totalSpeed"`
+	SpeedFormatted string         `json:"speedFormatted"`
+	Items          []TransferItem `json:"items"`
+}
+
+type rcloneTransferringItem struct {
+	Name       string `json:"name"`
+	Size       int64  `json:"size"`
+	Bytes      int64  `json:"bytes"`
+	Percentage int    `json:"percentage"`
+	Speed      int64  `json:"speed"`
+	SpeedAvg   int64  `json:"speedAvg"`
+	Eta        *int64 `json:"eta"`
+}
+
+type rcloneStatsResponse struct {
+	Bytes        int64                    `json:"bytes"`
+	TotalBytes   int64                    `json:"totalBytes"`
+	Speed        int64                    `json:"speed"`
+	Transfers    int                      `json:"transfers"`
+	Transferring []rcloneTransferringItem `json:"transferring"`
+}
+
+var statsClient = &http.Client{
+	Timeout: 400 * time.Millisecond,
+}
+
+func formatTransferBytes(b int64) string {
+	if b <= 0 {
+		return "0 B"
+	}
+	const unit = 1024
+	if b < unit {
+		return fmt.Sprintf("%d B", b)
+	}
+	div, exp := int64(unit), 0
+	for n := b / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(b)/float64(div), "KMGTPE"[exp])
+}
+
+func formatTransferSpeed(b int64) string {
+	return formatTransferBytes(b) + "/s"
+}
+
+func formatTransferEta(seconds int64) string {
+	if seconds <= 0 {
+		return "0s"
+	}
+	if seconds < 60 {
+		return fmt.Sprintf("%ds", seconds)
+	}
+	m := seconds / 60
+	s := seconds % 60
+	if m < 60 {
+		return fmt.Sprintf("%dm %ds", m, s)
+	}
+	h := m / 60
+	m = m % 60
+	return fmt.Sprintf("%dh %dm", h, m)
+}
+
+// GetTransferStatus queries rclone RC core/stats across all running drives
+func (s *Supervisor) GetTransferStatus() TransferStatus {
+	s.mu.RLock()
+	type target struct {
+		port   int
+		letter string
+	}
+	var targets []target
+	for _, proc := range s.processes {
+		if proc.RcPort > 0 {
+			targets = append(targets, target{port: proc.RcPort, letter: proc.DriveLetter})
+		}
+	}
+	s.mu.RUnlock()
+
+	status := TransferStatus{
+		Active: false,
+		Items:  make([]TransferItem, 0),
+	}
+
+	for _, tgt := range targets {
+		url := fmt.Sprintf("http://127.0.0.1:%d/core/stats", tgt.port)
+		resp, err := statsClient.Post(url, "application/json", strings.NewReader("{}"))
+		if err != nil {
+			continue
+		}
+		var stats rcloneStatsResponse
+		err = json.NewDecoder(resp.Body).Decode(&stats)
+		_ = resp.Body.Close()
+		if err != nil {
+			continue
+		}
+
+		status.TotalSpeed += stats.Speed
+		for _, item := range stats.Transferring {
+			etaSec := int64(0)
+			if item.Eta != nil {
+				etaSec = *item.Eta
+			}
+			tItem := TransferItem{
+				Name:           filepath.Base(item.Name),
+				DriveLetter:    tgt.letter,
+				Percentage:     item.Percentage,
+				Bytes:          item.Bytes,
+				Size:           item.Size,
+				Speed:          item.Speed,
+				SpeedFormatted: formatTransferSpeed(item.Speed),
+				BytesFormatted: formatTransferBytes(item.Bytes),
+				SizeFormatted:  formatTransferBytes(item.Size),
+				Eta:            etaSec,
+				EtaFormatted:   formatTransferEta(etaSec),
+			}
+			status.Items = append(status.Items, tItem)
+		}
+
+		if len(stats.Transferring) == 0 && stats.Transfers > 0 && stats.Speed > 0 {
+			tItem := TransferItem{
+				Name:           "Menyinkronkan berkas ke Google Cloud...",
+				DriveLetter:    tgt.letter,
+				Percentage:     50,
+				Bytes:          stats.Bytes,
+				Size:           stats.TotalBytes,
+				Speed:          stats.Speed,
+				SpeedFormatted: formatTransferSpeed(stats.Speed),
+				BytesFormatted: formatTransferBytes(stats.Bytes),
+				SizeFormatted:  formatTransferBytes(stats.TotalBytes),
+				Eta:            0,
+				EtaFormatted:   "proses",
+			}
+			status.Items = append(status.Items, tItem)
+		}
+	}
+
+	if len(status.Items) > 0 {
+		status.Active = true
+		status.SpeedFormatted = formatTransferSpeed(status.TotalSpeed)
+	}
+
+	return status
+}
+
 

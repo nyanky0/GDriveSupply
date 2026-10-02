@@ -109,10 +109,20 @@ func (a *API) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/winfsp/install", a.withAuth(a.HandleInstallWinFsp))
 	mux.HandleFunc("POST /api/system/shutdown", a.withAuth(a.HandleShutdown))
 
+	// Live Upload / Transfer Status
+	mux.HandleFunc("GET /api/transfers", a.withAuth(a.HandleGetTransfers))
+
 	// Diagnostic Logs Endpoints (High capacity feed & download)
 	mux.HandleFunc("GET /api/logs", a.withAuth(a.HandleGetLogs))
 	mux.HandleFunc("GET /api/logs/download", a.withAuth(a.HandleDownloadLogs))
 	mux.HandleFunc("POST /api/logs/clear", a.withAuth(a.HandleClearLogs))
+}
+
+// HandleGetTransfers returns live upload / transfer statistics from rclone RC
+func (a *API) HandleGetTransfers(w http.ResponseWriter, r *http.Request) {
+	status := a.supervisor.GetTransferStatus()
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(status)
 }
 
 func (a *API) HandleAuthStatus(w http.ResponseWriter, r *http.Request) {

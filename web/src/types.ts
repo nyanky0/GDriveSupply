@@ -45,4 +45,26 @@ export interface LogEntry {
   message: string;
 }
 
+export interface TransferItem {
+  name: string;
+  driveLetter: string;
+  percentage: number;
+  bytes: number;
+  size: number;
+  speed: number;
+  speedFormatted: string;
+  bytesFormatted: string;
+  sizeFormatted: string;
+  eta: number;
+  etaFormatted: string;
+}
+
+export interface TransferStatus {
+  active: boolean;
+  totalSpeed: number;
+  speedFormatted: string;
+  items: TransferItem[];
+}
+
+
 
