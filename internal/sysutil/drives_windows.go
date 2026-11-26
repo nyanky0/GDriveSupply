@@ -33,6 +33,12 @@ func GetAvailableDriveLetters() []string {
 	return available
 }
 
+// GetMountPathForLetter returns the local mount drive target on Windows
+func GetMountPathForLetter(driveLetter string) string {
+	clean := strings.TrimSuffix(strings.ToUpper(strings.TrimSpace(driveLetter)), ":")
+	return clean + ":\\"
+}
+
 // OpenDriveInExplorer launches Windows Explorer for the given drive letter (e.g. "X:" or "X")
 func OpenDriveInExplorer(driveLetter string) error {
 	clean := strings.TrimSuffix(strings.ToUpper(strings.TrimSpace(driveLetter)), ":")

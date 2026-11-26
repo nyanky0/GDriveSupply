@@ -20,6 +20,7 @@ import (
 	"golang.org/x/oauth2/google"
 	"gdrive-supply/internal/config"
 	"gdrive-supply/internal/logger"
+	"gdrive-supply/internal/sysutil"
 )
 
 type ProcessEntry struct {
@@ -205,14 +206,18 @@ scope = drive
 
 	mountTarget := drive.DriveLetter
 	if runtime.GOOS != "windows" {
-		cleanLetter := strings.TrimSuffix(strings.ToUpper(strings.TrimSpace(drive.DriveLetter)), ":")
-		home, err := os.UserHomeDir()
-		if err != nil || home == "" {
-			home = "."
-		}
-		mountTarget = filepath.Join(home, "GDrive", cleanLetter)
+		mountTarget = sysutil.GetMountPathForLetter(drive.DriveLetter)
+
+		// Self-healing: detach any dangling/zombie FUSE mount (Transport endpoint not connected) before mkdir
+		_ = exec.Command("fusermount3", "-u", "-z", mountTarget).Run()
+		_ = exec.Command("fusermount", "-u", "-z", mountTarget).Run()
+
 		if err := os.MkdirAll(mountTarget, 0755); err != nil {
-			return fmt.Errorf("gagal membuat direktori mount %s: %w", mountTarget, err)
+			// If still fails with stale mount, force lazy detach and retry once
+			_ = exec.Command("fusermount3", "-u", "-z", mountTarget).Run()
+			if err2 := os.MkdirAll(mountTarget, 0755); err2 != nil {
+				return fmt.Errorf("gagal membuat direktori mount %s: %w", mountTarget, err2)
+			}
 		}
 	}
 
