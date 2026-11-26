@@ -197,7 +197,7 @@ git clone https://github.com/nyanky0/GDriveSupply.git
 cd GDriveSupply
 ```
 
-### 2. Build Single Binary:
+### 2. Kompilasi & Instalasi:
 
 #### Di Windows:
 Jalankan skrip build otomatis PowerShell atau `build.bat`:
@@ -206,13 +206,19 @@ powershell -ExecutionPolicy Bypass -File .\scripts\build.ps1
 ```
 Atau cukup klik dua kali `build.bat`. Menghasilkan file eksekutabel tunggal `GDriveSupply.exe`.
 
-#### Di Linux:
-Beri izin eksekusi dan jalankan `build.sh`:
+#### Di Linux (1-Click Installer):
+Jalankan skrip installer otomatis:
 ```bash
-chmod +x build.sh
-./build.sh
+chmod +x install.sh
+./install.sh
 ```
-*(Opsional: tambahkan flag `./build.sh --build-frontend` jika Anda ingin mengompilasi ulang source code frontend Vite).* Menghasilkan file ELF binary `GDriveSupply`.
+Skrip ini akan:
+1. Memverifikasi ketersediaan driver FUSE (`fuse3`).
+2. Mengompilasi source code menjadi binary native `GDriveSupply`.
+3. Memasang CLI global `gdrive-supply` ke `~/.local/bin/gdrive-supply`.
+4. Mengonfigurasi autostart systemd user service jika diinginkan.
+
+*(Untuk uninstall: jalankan `./uninstall.sh`).*
 
 ### 3. Menjalankan Aplikasi:
 
@@ -291,6 +297,8 @@ GDriveSupply/
 │   ├── build.sh                 # Skrip build bash Linux
 │   ├── setup_autostart.ps1      # Startup registrasi Windows
 │   └── setup_autostart_linux.sh # Systemd user service registrasi Linux
+├── install.sh                   # 1-Click installer Linux (CLI & autostart)
+├── uninstall.sh                 # Uninstaller Linux
 ├── build.bat                    # Shortcut build Windows
 ├── build.sh                     # Skrip build Linux
 ├── run.bat                      # Shortcut jalankan Windows

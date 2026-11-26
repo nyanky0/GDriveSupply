@@ -1,7 +1,24 @@
 #!/usr/bin/env bash
 # gdrive-supply - Global CLI helper for managing GDriveSupply service
 
-PROJECT_DIR="/run/media/hwangky0/D/Projects/GDriveSupply"
+# Resolve real path of this script (supporting symlinks anywhere in PATH)
+TARGET_FILE="${BASH_SOURCE[0]}"
+while [ -L "$TARGET_FILE" ]; do
+    TARGET_DIR="$(cd -P "$(dirname "$TARGET_FILE")" && pwd)"
+    TARGET_FILE="$(readlink "$TARGET_FILE")"
+    [[ $TARGET_FILE != /* ]] && TARGET_FILE="$TARGET_DIR/$TARGET_FILE"
+done
+SCRIPT_DIR="$(cd -P "$(dirname "$TARGET_FILE")" && pwd)"
+PROJECT_DIR="$(cd -P "$SCRIPT_DIR/.." && pwd)"
+
+# Fallback from saved install directory if binary not found in parent
+if [ ! -f "$PROJECT_DIR/GDriveSupply" ] && [ -f "$HOME/.config/GDriveSupply/install_dir" ]; then
+    SAVED_DIR="$(cat "$HOME/.config/GDriveSupply/install_dir" 2>/dev/null)"
+    if [ -f "$SAVED_DIR/GDriveSupply" ]; then
+        PROJECT_DIR="$SAVED_DIR"
+    fi
+fi
+
 BIN="$PROJECT_DIR/GDriveSupply"
 START_SCRIPT="$PROJECT_DIR/start.sh"
 STOP_SCRIPT="$PROJECT_DIR/stop.sh"
