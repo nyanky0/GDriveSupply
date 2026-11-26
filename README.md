@@ -223,16 +223,22 @@ run.bat
 ```
 
 #### Di Linux:
-Gunakan skrip start background (terminal aman ditutup langsung):
+Kamu bisa mengontrol aplikasi dari mana saja lewat perintah global `gdrive-supply`:
+```bash
+gdrive-supply start      # Menjalankan di background (terminal aman ditutup)
+gdrive-supply stop       # Menghentikan aplikasi & melepas semua virtual drive
+gdrive-supply restart    # Restart service
+gdrive-supply status     # Cek status PID & daftar partisi mount yang aktif
+gdrive-supply open       # Membuka Web Dashboard di browser (http://127.0.0.1:4040)
+gdrive-supply logs       # Pantau log aktivitas secara realtime
+gdrive-supply enable     # Aktifkan autostart saat login (systemd user service)
+gdrive-supply disable    # Matikan autostart
+```
+
+Atau menggunakan skrip lokal:
 ```bash
 ./start.sh
-```
-Untuk menghentikan aplikasi:
-```bash
 ./stop.sh
-```
-Atau daftarkan sebagai **systemd user service** agar otomatis menyala saat login/boot tanpa perlu buka terminal:
-```bash
 ./scripts/setup_autostart_linux.sh
 ```
 

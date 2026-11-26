@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+# gdrive-supply - Global CLI helper for managing GDriveSupply service
+
+PROJECT_DIR="/run/media/hwangky0/D/Projects/GDriveSupply"
+BIN="$PROJECT_DIR/GDriveSupply"
+START_SCRIPT="$PROJECT_DIR/start.sh"
+STOP_SCRIPT="$PROJECT_DIR/stop.sh"
+AUTOSTART_SCRIPT="$PROJECT_DIR/scripts/setup_autostart_linux.sh"
+LOG_FILE="$HOME/.config/GDriveSupply/logs/app.log"
+WEB_URL="http://127.0.0.1:4040"
+
+is_service_active() {
+    systemctl --user is-active gdrive-supply.service >/dev/null 2>&1
+}
+
+is_process_running() {
+    pgrep -x "GDriveSupply" >/dev/null 2>&1
+}
+
+case "$1" in
+    start)
+        if is_service_active || is_process_running; then
+            PID=$(pgrep -x GDriveSupply | head -n1)
+            echo "[i] GDriveSupply sudah aktif berjalan (PID: ${PID:-systemd})."
+            echo "[*] Web Dashboard: $WEB_URL"
+            xdg-open "$WEB_URL" >/dev/null 2>&1 &
+            exit 0
+        fi
+        "$START_SCRIPT"
+        ;;
+    stop)
+        "$STOP_SCRIPT"
+        ;;
+    restart)
+        echo "[*] Me-restart GDriveSupply..."
+        "$STOP_SCRIPT"
+        sleep 1
+        "$START_SCRIPT"
+        ;;
+    status)
+        echo "=========================================="
+        echo "       Status Layanan GDriveSupply        "
+        echo "=========================================="
+        if is_service_active; then
+            echo "Status Service   : AKTIF (systemd user service)"
+        elif is_process_running; then
+            echo "Status Service   : AKTIF (background process)"
+        else
+            echo "Status Service   : TIDAK AKTIF (Stopped)"
+        fi
+
+        if is_process_running; then
+            PID=$(pgrep -x GDriveSupply | head -n1)
+            echo "Process ID (PID) : $PID"
+            echo "Web Dashboard    : $WEB_URL"
+            echo -e "\nPartisi Google Drive yang aktif:"
+            MOUNTS=$(grep -E "GDrive|rclone" /proc/mounts 2>/dev/null | awk '{print " - " $2 " (" $1 ")"}')
+            if [ -n "$MOUNTS" ]; then
+                echo "$MOUNTS"
+            else
+                echo " (Belum ada partisi yang dimount)"
+            fi
+        else
+            echo "Web Dashboard    : Offline"
+        fi
+        echo "File Log         : $LOG_FILE"
+        echo "=========================================="
+        ;;
+    open|dashboard)
+        echo "[*] Membuka Web Dashboard: $WEB_URL"
+        xdg-open "$WEB_URL" >/dev/null 2>&1 &
+        ;;
+    logs|log)
+        if [ ! -f "$LOG_FILE" ]; then
+            echo "[!] File log belum ditemukan di $LOG_FILE"
+            exit 1
+        fi
+        echo "[*] Menampilkan log realtime (Ctrl+C untuk keluar)..."
+        tail -n 50 -f "$LOG_FILE"
+        ;;
+    enable|autostart)
+        "$AUTOSTART_SCRIPT"
+        ;;
+    disable)
+        echo "[*] Menonaktifkan autostart systemd..."
+        systemctl --user disable --now gdrive-supply.service 2>/dev/null || true
+        echo "[✓] Autostart telah dinonaktifkan."
+        ;;
+    *)
+        echo "Penggunaan: gdrive-supply <perintah>"
+        echo ""
+        echo "Perintah yang tersedia:"
+        echo "  start      - Menjalankan GDriveSupply di background"
+        echo "  stop       - Menghentikan GDriveSupply dan melepas virtual drive"
+        echo "  restart    - Me-restart GDriveSupply"
+        echo "  status     - Memeriksa status proses dan virtual drive yang terpasang"
+        echo "  open       - Membuka Web Dashboard di browser (http://127.0.0.1:4040)"
+        echo "  logs       - Menampilkan log aktivitas dan VFS rclone secara live"
+        echo "  enable     - Mengaktifkan autostart saat boot/login (systemd)"
+        echo "  disable    - Mematikan autostart saat boot/login"
+        exit 1
+        ;;
+esac
