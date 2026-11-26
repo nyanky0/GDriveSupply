@@ -223,9 +223,17 @@ run.bat
 ```
 
 #### Di Linux:
-Jalankan binary secara langsung dari terminal atau jadikan systemd service:
+Gunakan skrip start background (terminal aman ditutup langsung):
 ```bash
-./GDriveSupply
+./start.sh
+```
+Untuk menghentikan aplikasi:
+```bash
+./stop.sh
+```
+Atau daftarkan sebagai **systemd user service** agar otomatis menyala saat login/boot tanpa perlu buka terminal:
+```bash
+./scripts/setup_autostart_linux.sh
 ```
 
 Aplikasi akan:
@@ -275,9 +283,13 @@ GDriveSupply/
 ├── scripts/
 │   ├── build.ps1                # Skrip build PowerShell Windows
 │   ├── build.sh                 # Skrip build bash Linux
+│   ├── setup_autostart.ps1      # Startup registrasi Windows
+│   └── setup_autostart_linux.sh # Systemd user service registrasi Linux
 ├── build.bat                    # Shortcut build Windows
 ├── build.sh                     # Skrip build Linux
 ├── run.bat                      # Shortcut jalankan Windows
+├── start.sh                     # Start background detached Linux (terminal aman ditutup)
+├── stop.sh                      # Stop background Linux (unmount bersih)
 ├── .gitignore                   # Proteksi kredensial, token & binary lokal
 └── README.md                    # Dokumentasi utama proyek
 ```
