@@ -19,6 +19,9 @@ client_secret*.json
 *.exe~
 *.dll
 *.msi
+GDriveSupply
+bin/rclone
+bin/rclone.exe
 bin/*.exe
 bin/*.conf
 bin/*.msi

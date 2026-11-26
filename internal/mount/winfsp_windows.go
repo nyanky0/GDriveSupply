@@ -1,3 +1,5 @@
+//go:build windows
+
 package mount
 
 import (
@@ -8,6 +10,20 @@ import (
 	"os/exec"
 	"path/filepath"
 )
+
+// CheckWinFspInstalled checks if WinFsp kernel driver is installed on Windows
+func CheckWinFspInstalled() bool {
+	paths := []string{
+		`C:\Program Files\WinFsp`,
+		`C:\Program Files (x86)\WinFsp`,
+	}
+	for _, p := range paths {
+		if _, err := os.Stat(p); err == nil {
+			return true
+		}
+	}
+	return false
+}
 
 // DownloadAndLaunchWinFspInstaller downloads and runs the official WinFsp installer
 func (s *Supervisor) DownloadAndLaunchWinFspInstaller() error {

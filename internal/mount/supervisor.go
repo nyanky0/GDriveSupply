@@ -11,9 +11,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"golang.org/x/oauth2"
@@ -66,11 +66,15 @@ func GetSupervisor() *Supervisor {
 
 // locateOrPrepareRclone checks if rclone is in PATH or in bin/
 func (s *Supervisor) locateOrPrepareRclone() {
-	if path, err := exec.LookPath("rclone.exe"); err == nil {
+	rcloneName := "rclone"
+	if runtime.GOOS == "windows" {
+		rcloneName = "rclone.exe"
+	}
+	if path, err := exec.LookPath(rcloneName); err == nil {
 		s.rclonePath = path
 		return
 	}
-	localBin := filepath.Join(s.binDir, "rclone.exe")
+	localBin := filepath.Join(s.binDir, rcloneName)
 	if _, err := os.Stat(localBin); err == nil {
 		s.rclonePath = localBin
 		return
@@ -78,14 +82,19 @@ func (s *Supervisor) locateOrPrepareRclone() {
 	s.rclonePath = localBin // Will trigger auto download if needed
 }
 
-// EnsureRcloneDownloaded downloads rclone.exe if missing
+// EnsureRcloneDownloaded downloads rclone if missing
 func (s *Supervisor) EnsureRcloneDownloaded() error {
 	if _, err := os.Stat(s.rclonePath); err == nil {
 		return nil
 	}
 
+	targetBinName := "rclone"
+	downloadURL := "https://downloads.rclone.org/rclone-current-linux-amd64.zip"
+	if runtime.GOOS == "windows" {
+		targetBinName = "rclone.exe"
+		downloadURL = "https://downloads.rclone.org/rclone-current-windows-amd64.zip"
+	}
 
-	downloadURL := "https://downloads.rclone.org/rclone-current-windows-amd64.zip"
 	resp, err := http.Get(downloadURL)
 	if err != nil {
 		return fmt.Errorf("failed to download rclone: %w", err)
@@ -107,7 +116,7 @@ func (s *Supervisor) EnsureRcloneDownloaded() error {
 	}
 
 	for _, file := range zipReader.File {
-		if filepath.Base(file.Name) == "rclone.exe" {
+		if filepath.Base(file.Name) == targetBinName {
 			rc, err := file.Open()
 			if err != nil {
 				return err
@@ -127,21 +136,7 @@ func (s *Supervisor) EnsureRcloneDownloaded() error {
 		}
 	}
 
-	return fmt.Errorf("rclone.exe not found inside official zip archive")
-}
-
-// CheckWinFspInstalled checks if WinFsp kernel driver is installed on Windows
-func CheckWinFspInstalled() bool {
-	paths := []string{
-		`C:\Program Files\WinFsp`,
-		`C:\Program Files (x86)\WinFsp`,
-	}
-	for _, p := range paths {
-		if _, err := os.Stat(p); err == nil {
-			return true
-		}
-	}
-	return false
+	return fmt.Errorf("%s not found inside official zip archive", targetBinName)
 }
 
 // MountDrive launches rclone mount for a drive config
@@ -208,10 +203,23 @@ scope = drive
 	}
 	rcAddr := fmt.Sprintf("127.0.0.1:%d", rcPort)
 
+	mountTarget := drive.DriveLetter
+	if runtime.GOOS != "windows" {
+		cleanLetter := strings.TrimSuffix(strings.ToUpper(strings.TrimSpace(drive.DriveLetter)), ":")
+		home, err := os.UserHomeDir()
+		if err != nil || home == "" {
+			home = "."
+		}
+		mountTarget = filepath.Join(home, "GDrive", cleanLetter)
+		if err := os.MkdirAll(mountTarget, 0755); err != nil {
+			return fmt.Errorf("gagal membuat direktori mount %s: %w", mountTarget, err)
+		}
+	}
+
 	args := []string{
 		"mount",
 		fmt.Sprintf("%s:", drive.ID),
-		drive.DriveLetter,
+		mountTarget,
 		"--config", tempConf,
 		"--vfs-cache-mode", "full",
 		"--vfs-cache-max-size", "10G",
@@ -219,20 +227,21 @@ scope = drive
 		"--vfs-read-chunk-size", "32M",
 		"--vfs-read-chunk-size-limit", "256M",
 		"--dir-cache-time", "1h",
-		"--volname", volName,
+	}
+	if runtime.GOOS == "windows" {
+		args = append(args, "--volname", volName)
+	}
+	args = append(args,
 		"--rc",
 		"--rc-addr", rcAddr,
 		"--rc-no-auth",
 		"-v",
-	}
+	)
 
 	logger.Get().Infof("MOUNT", "Menjalankan perintah rclone mount untuk drive %s (%s, RC: %s)...", drive.DriveLetter, drive.ID, rcAddr)
 
 	cmd := exec.Command(s.rclonePath, args...)
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		HideWindow:    true,
-		CreationFlags: 0x08000000, // CREATE_NO_WINDOW
-	}
+	cmd.SysProcAttr = hideWindowSysProcAttr()
 
 	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
@@ -308,6 +317,16 @@ func (s *Supervisor) UnmountDrive(driveID string) error {
 		_ = entry.Cmd.Wait()
 	}
 
+	if runtime.GOOS != "windows" {
+		cleanLetter := strings.TrimSuffix(strings.ToUpper(strings.TrimSpace(entry.DriveLetter)), ":")
+		home, err := os.UserHomeDir()
+		if err == nil && home != "" {
+			target := filepath.Join(home, "GDrive", cleanLetter)
+			_ = exec.Command("fusermount3", "-u", "-z", target).Run()
+			_ = exec.Command("fusermount", "-u", "-z", target).Run()
+		}
+	}
+
 	delete(s.processes, driveID)
 	tempConf := filepath.Join(s.binDir, fmt.Sprintf("rclone_%s.conf", driveID))
 	_ = os.Remove(tempConf)
@@ -335,6 +354,15 @@ func (s *Supervisor) UnmountAll() {
 		if entry.Cmd != nil && entry.Cmd.Process != nil {
 			_ = entry.Cmd.Process.Kill()
 			_ = entry.Cmd.Wait()
+		}
+		if runtime.GOOS != "windows" {
+			cleanLetter := strings.TrimSuffix(strings.ToUpper(strings.TrimSpace(entry.DriveLetter)), ":")
+			home, err := os.UserHomeDir()
+			if err == nil && home != "" {
+				target := filepath.Join(home, "GDrive", cleanLetter)
+				_ = exec.Command("fusermount3", "-u", "-z", target).Run()
+				_ = exec.Command("fusermount", "-u", "-z", target).Run()
+			}
 		}
 		tempConf := filepath.Join(s.binDir, fmt.Sprintf("rclone_%s.conf", id))
 		_ = os.Remove(tempConf)

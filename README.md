@@ -1,32 +1,32 @@
 # ☁️ GDrive Supply
 
-> **Aggregator Multi-Akun Google Drive Menjadi Partisi Harddisk Lokal Windows (Zero-VPS, Rp 0, Direct Client-to-Cloud)**
+> **Aggregator Multi-Akun Google Drive Menjadi Partisi Harddisk / Direktori Mount Lokal Cross-Platform Windows & Linux (Zero-VPS, Rp 0, Direct Client-to-Cloud)**
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D6.svg)
-![Go](https://img.shields.io/badge/backend-Go%201.22-00ADD8.svg)
+![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-0078D6.svg)
+![Go](https://img.shields.io/badge/backend-Go%201.22%2B-00ADD8.svg)
 ![React](https://img.shields.io/badge/frontend-React%2019%20%2B%20Tailwind%20v4-61DAFB.svg)
-![Kernel](https://img.shields.io/badge/driver-WinFsp%20VFS-008080.svg)
+![Driver](https://img.shields.io/badge/driver-WinFsp%20(Windows)%20%7C%20FUSE%20(Linux)-008080.svg)
 
 ---
 
 ## 📌 Ringkasan Arsitektur
 
-**GDrive Supply** adalah aplikasi desktop Windows berkinerja tinggi yang menggabungkan banyak akun Google Drive menjadi partisi harddisk virtual lokal terpisah di File Explorer (*This PC*, misalnya drive `X:`, `Y:`, `Z:`). 
+**GDrive Supply** adalah aplikasi desktop cross-platform (Windows & Linux) berkinerja tinggi yang menggabungkan banyak akun Google Drive menjadi partisi harddisk virtual lokal terpisah di File Explorer Windows (*This PC*, misalnya drive `X:`, `Y:`, `Z:`) atau direktori mount lokal FUSE di Linux (misalnya `~/GDrive/X`, `~/GDrive/Y`). 
 
-Setiap akun memiliki partisi drive tersendiri dengan kapasitas penuh (misalnya 5 TB, 2 TB, atau 15 GB gratis). Seluruh lalu lintas data ditransfer langsung antara komputer Anda dan Google Cloud Storage via HTTPS TLS 1.3 (**Zero-VPS Bandwidth**), sehingga Anda tidak memerlukan server perantara dan biaya operasional bulanan adalah **Rp 0**.
+Setiap akun memiliki partisi/mount tersendiri dengan kapasitas penuh (misalnya 5 TB, 2 TB, atau 15 GB gratis). Seluruh lalu lintas data ditransfer langsung antara komputer Anda dan Google Cloud Storage via HTTPS TLS 1.3 (**Zero-VPS Bandwidth**), sehingga Anda tidak memerlukan server perantara dan biaya operasional bulanan adalah **Rp 0**.
 
 ```
-[ Komputer Lokal Windows ] 
+[ Komputer Lokal (Windows / Linux) ] 
    │ 
-   ├── 📁 File Explorer (This PC -> Z:\ Kyo Toram Drive)
-   │      └── Driver Kernel WinFsp (User-mode VFS)
+   ├── 📁 File Explorer / File Manager (Z:\ Kyo Toram Drive / ~/GDrive/Z)
+   │      └── Driver Kernel VFS: WinFsp (Windows) / FUSE3 (Linux)
    │
-   └── ⚡ Single Binary GDriveSupply.exe
+   └── ⚡ Single Binary GDriveSupply (.exe / ELF)
           ├── 🌐 Embedded Web Dashboard (http://127.0.0.1:4040)
-          ├── 🔒 Windows DPAPI Encrypted Storage (%APPDATA%\GDriveSupply)
-          ├── 🛡️ Single-Instance Named Mutex Guard
-          └── 📌 Native Windows System Tray Notification Icon
+          ├── 🔒 Encrypted Storage: DPAPI (%APPDATA%) / AES-256-GCM (~/.config)
+          ├── 🛡️ Single-Instance Guard (Named Mutex / File Lock)
+          └── 📌 Tray Companion (Windows Tray / Linux Daemon)
                  │
                  └── [ Direct HTTPS TLS 1.3 ] ──────────> ☁️ Google Drive API v3
                                                           (googleapis.com)
@@ -117,10 +117,21 @@ Setiap akun memiliki partisi drive tersendiri dengan kapasitas penuh (misalnya 5
 
 ## 🛠️ Prasyarat Sistem
 
+### Windows:
 1. **Sistem Operasi**: Windows 10 atau Windows 11 (64-bit).
 2. **Driver WinFsp**: Wajib terpasang untuk membuat partisi drive virtual di Windows File Explorer.
    - Unduh dari situs resmi: [https://winfsp.dev/rel/](https://winfsp.dev/rel/) (disarankan versi `winfsp-2.0` ke atas).
-3. **Akun Google**: Akun Google pribadi / Google Workspace dengan kuota penyimpanan aktif.
+
+### Linux:
+1. **Sistem Operasi**: Linux berbasis kernel 5.x / 6.x / 7.x (Arch Linux, Ubuntu, Debian, Fedora, openSUSE, dll).
+2. **Driver FUSE (fuse3)**: Wajib terpasang untuk mount filesystem:
+   - **Arch / Manjaro**: `sudo pacman -S fuse3`
+   - **Ubuntu / Debian**: `sudo apt install fuse3`
+   - **Fedora / RHEL**: `sudo dnf install fuse3`
+3. Folder mount default akan otomatis dibuat di `~/GDrive/<DriveLetter>` (contoh: `~/GDrive/X`).
+
+### Semua OS:
+- **Akun Google**: Akun Google pribadi / Google Workspace dengan kuota penyimpanan aktif.
 
 ---
 
@@ -178,32 +189,49 @@ Jika Anda ingin mengompilasi dari source code:
 
 ### Prasyarat Pengembang:
 - Go 1.22 atau lebih baru (`go version`)
-- Node.js 18+ & npm (`node -v`)
+- Node.js 18+ & npm (`node -v`) *(hanya jika ingin mengedit/rebuild frontend)*
 
 ### 1. Clone Repository:
-```powershell
+```bash
 git clone https://github.com/nyanky0/GDriveSupply.git
 cd GDriveSupply
 ```
 
 ### 2. Build Single Binary:
-Jalankan skrip build otomatis PowerShell:
+
+#### Di Windows:
+Jalankan skrip build otomatis PowerShell atau `build.bat`:
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\build.ps1
 ```
-Skrip ini akan:
-1. Membangun bundle frontend React + Vite ke folder `internal/ui/dist`.
-2. Mengompilasi kode backend Go menjadi satu file eksekutabel tunggal `GDriveSupply.exe` dengan flag GUI Windows (`-H=windowsgui`).
+Atau cukup klik dua kali `build.bat`. Menghasilkan file eksekutabel tunggal `GDriveSupply.exe`.
+
+#### Di Linux:
+Beri izin eksekusi dan jalankan `build.sh`:
+```bash
+chmod +x build.sh
+./build.sh
+```
+*(Opsional: tambahkan flag `./build.sh --build-frontend` jika Anda ingin mengompilasi ulang source code frontend Vite).* Menghasilkan file ELF binary `GDriveSupply`.
 
 ### 3. Menjalankan Aplikasi:
-Cukup klik dua kali file `GDriveSupply.exe` atau jalankan:
+
+#### Di Windows:
+Cukup klik dua kali `GDriveSupply.exe` atau jalankan:
 ```cmd
 run.bat
 ```
+
+#### Di Linux:
+Jalankan binary secara langsung dari terminal atau jadikan systemd service:
+```bash
+./GDriveSupply
+```
+
 Aplikasi akan:
 - Membuka Web Dashboard di browser default: [http://localhost:4040](http://localhost:4040).
-- Memunculkan ikon GDrive Supply di System Tray pojok kanan bawah Windows.
-- Mengotomatisasi auto-mount seluruh akun Google Drive yang aktif.
+- Berjalan di latar belakang (System Tray di Windows / Headless Daemon di Linux).
+- Mengotomatisasi auto-mount seluruh akun Google Drive yang aktif (`X:\` di Windows atau `~/GDrive/X` di Linux).
 
 ---
 
@@ -213,57 +241,43 @@ Aplikasi akan:
 GDriveSupply/
 ├── cmd/
 │   └── app/
-│       └── main.go              # Entry point Go, HTTP server & message loop tray
+│       └── main.go              # Entry point Go, HTTP server & loop daemon
 ├── internal/
 │   ├── api/
 │   │   └── handlers.go          # REST API endpoints (mount, rename, shutdown, OAuth, auth session)
 │   ├── config/
-│   │   ├── config.go            # Store manajemen konfigurasi & migrasi
-│   │   └── dpapi_windows.go     # Enkripsi rahasia via Windows DPAPI CryptProtectData
+│   │   ├── config.go            # Store konfigurasi cross-platform (%APPDATA% / ~/.config)
+│   │   ├── dpapi_windows.go     # Enkripsi Windows via DPAPI CryptProtectData
+│   │   └── crypto_other.go      # Enkripsi Linux via AES-256-GCM hardware key
 │   ├── logger/
 │   │   └── logger.go            # High-capacity diagnostic ring buffer logger
 │   ├── mount/
 │   │   ├── supervisor.go        # Manajemen proses VFS rclone & TokenSource OAuth2
-│   │   └── winfsp_windows.go    # Deteksi & installer otomatis WinFsp
+│   │   ├── winfsp_windows.go    # Deteksi WinFsp di Windows
+│   │   ├── vfs_other.go         # Deteksi FUSE di Linux
+│   │   ├── proc_windows.go      # Process attributes Windows (CREATE_NO_WINDOW)
+│   │   └── proc_other.go        # Process attributes Linux
 │   ├── sysutil/
-│   │   ├── drives_windows.go    # Alokasi huruf drive Windows (A:-Z:)
+│   │   ├── drives_windows.go    # Alokasi huruf drive Windows (A:-Z:) via kernel32
+│   │   ├── drives_other.go      # Alokasi mount folder Linux (~/GDrive/<Slot>)
 │   │   ├── mutex_windows.go     # Win32 Named Mutex single-instance guard
+│   │   ├── mutex_other.go       # Linux file lock single-instance guard (flock)
 │   │   └── token.go             # Cryptographic secure random token generator
 │   ├── tray/
-│   │   ├── tray_windows.go      # Embedded launcher & lifecycle manager
-│   │   ├── tray_helper.cs       # Native Windows Forms System Tray companion
-│   │   └── tray_helper.exe      # Embedded standalone tray binary (35 KB)
+│   │   ├── tray_windows.go      # Launcher system tray native Windows
+│   │   ├── tray_other.go        # Headless background daemon mode Linux
+│   │   ├── tray_helper.cs       # Windows Forms System Tray companion (C#)
+│   │   └── tray_helper.exe      # Embedded standalone tray binary Windows (35 KB)
 │   └── ui/
-│       ├── embed.go             # Go standard library //go:embed dist
+│       ├── ui.go                # Go standard library //go:embed dist
 │       └── dist/                # Output build React terintegrasi
 ├── web/                         # Frontend Vite + React 19 + Tailwind CSS v4
-│   ├── src/
-│   │   ├── components/
-│   │   │   ├── AddDriveModal.tsx
-│   │   │   ├── AntiBannedModal.tsx
-│   │   │   ├── CredentialsModal.tsx
-│   │   │   ├── DocsAndSolutions.tsx # Tab panduan masalah & troubleshooting OAuth 400
-│   │   │   ├── DriveCard.tsx
-│   │   │   ├── ErrorDrivesBox.tsx   # Box terpisah khusus drive bermasalah
-│   │   │   ├── LegalModal.tsx
-│   │   │   ├── LockScreen.tsx       # Layer keamanan PIN/Password dengan brute-force guard
-│   │   │   ├── Logo.tsx             # Logo Google Drive Ribbon gradasi monokrom
-│   │   │   ├── LogsModal.tsx        # Viewer diagnostic logs kapasitas tinggi
-│   │   │   ├── Navbar.tsx           # Navigasi, theme toggle & shutdown
-│   │   │   ├── RenameDriveModal.tsx
-│   │   │   ├── SecuritySettingsModal.tsx
-│   │   │   ├── ShutdownModal.tsx
-│   │   │   ├── StorageOverview.tsx
-│   │   │   └── TutorialModal.tsx
-│   │   ├── App.tsx              # Root component & theme observer
-│   │   ├── types.ts
-│   │   └── utils/
-│   │       └── format.ts        # Shared formatters & clipboard helper
-│   └── package.json
 ├── scripts/
-│   └── build.ps1                # Skrip kompilasi otomatis frontend + backend + tray
+│   ├── build.ps1                # Skrip build PowerShell Windows
+│   ├── build.sh                 # Skrip build bash Linux
 ├── build.bat                    # Shortcut build Windows
-├── run.bat                      # Shortcut jalankan aplikasi
+├── build.sh                     # Skrip build Linux
+├── run.bat                      # Shortcut jalankan Windows
 ├── .gitignore                   # Proteksi kredensial, token & binary lokal
 └── README.md                    # Dokumentasi utama proyek
 ```

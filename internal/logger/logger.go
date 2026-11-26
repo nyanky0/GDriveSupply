@@ -47,11 +47,14 @@ var (
 // InitLogger initializes the global logger singleton with memory ring buffer and file persistence
 func InitLogger() *Logger {
 	once.Do(func() {
-		appData := os.Getenv("APPDATA")
-		logDir := filepath.Join(appData, "GDriveSupply", "logs")
-		if appData == "" {
-			logDir = filepath.Join(".", "logs")
+		baseDir, err := os.UserConfigDir()
+		if err != nil || baseDir == "" {
+			baseDir = os.Getenv("APPDATA")
+			if baseDir == "" {
+				baseDir = "."
+			}
 		}
+		logDir := filepath.Join(baseDir, "GDriveSupply", "logs")
 		_ = os.MkdirAll(logDir, 0755)
 
 		logPath := filepath.Join(logDir, "app.log")

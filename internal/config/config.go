@@ -59,19 +59,22 @@ var (
 // GetStore returns the singleton configuration store
 func GetStore() *Store {
 	once.Do(func() {
-		// Store config in %APPDATA%\GDriveSupply\config.json
-		appData := os.Getenv("APPDATA")
-		configDir := filepath.Join(appData, "GDriveSupply")
-		if appData == "" {
-			configDir = "."
+		// Store config in %APPDATA%\GDriveSupply\config.json or ~/.config/GDriveSupply/config.json
+		baseDir, err := os.UserConfigDir()
+		if err != nil || baseDir == "" {
+			baseDir = os.Getenv("APPDATA")
+			if baseDir == "" {
+				baseDir = "."
+			}
 		}
+		configDir := filepath.Join(baseDir, "GDriveSupply")
 		_ = os.MkdirAll(configDir, 0755)
 
 		configFile := filepath.Join(configDir, "config.json")
 
 		// Seamless migration from legacy GDriveManager if it exists
-		if _, err := os.Stat(configFile); os.IsNotExist(err) && appData != "" {
-			oldFile := filepath.Join(appData, "GDriveManager", "config.json")
+		if _, err := os.Stat(configFile); os.IsNotExist(err) && baseDir != "" {
+			oldFile := filepath.Join(baseDir, "GDriveManager", "config.json")
 			if oldData, err := os.ReadFile(oldFile); err == nil {
 				_ = os.WriteFile(configFile, oldData, 0600)
 			}

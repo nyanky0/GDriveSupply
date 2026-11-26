@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -740,7 +741,7 @@ func (a *API) HandleOpenExplorer(w http.ResponseWriter, r *http.Request) {
 	}
 
 	go func() {
-		_ = exec.Command("explorer", driveCfg.DriveLetter+"\\").Start()
+		_ = sysutil.OpenDriveInExplorer(driveCfg.DriveLetter)
 	}()
 
 	w.Header().Set("Content-Type", "application/json")
@@ -767,7 +768,7 @@ func (a *API) HandleShutdown(w http.ResponseWriter, r *http.Request) {
 	// Unmount all mounted drives cleanly
 	a.supervisor.UnmountAll()
 
-	if req.WithWinFsp {
+	if req.WithWinFsp && runtime.GOOS == "windows" {
 		go func() {
 			_ = exec.Command("net", "stop", "WinFsp.Launcher").Run()
 		}()

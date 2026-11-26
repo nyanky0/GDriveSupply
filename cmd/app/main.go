@@ -9,7 +9,9 @@ import (
 	"os/exec"
 	"os/signal"
 	"path"
+	"runtime"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -38,11 +40,19 @@ func main() {
 	l.Infof("CORE", " GDrive Supply - Multi-Account Local Drive Service      ")
 	l.Infof("CORE", "========================================================")
 
-	// Check WinFsp on startup
+	// Check WinFsp / FUSE on startup
 	if !mount.CheckWinFspInstalled() {
-		l.Warnf("CORE", "PERINGATAN: Driver WinFsp belum terpasang. Partisi drive tidak dapat dimount tanpa WinFsp.")
+		if runtime.GOOS == "windows" {
+			l.Warnf("CORE", "PERINGATAN: Driver WinFsp belum terpasang. Partisi drive tidak dapat dimount tanpa WinFsp.")
+		} else {
+			l.Warnf("CORE", "PERINGATAN: Driver FUSE (fuse3) belum terpasang. Partisi drive tidak dapat dimount tanpa FUSE.")
+		}
 	} else {
-		l.Infof("CORE", "Driver WinFsp terdeteksi aktif dan siap digunakan.")
+		if runtime.GOOS == "windows" {
+			l.Infof("CORE", "Driver WinFsp terdeteksi aktif dan siap digunakan.")
+		} else {
+			l.Infof("CORE", "Driver FUSE terdeteksi aktif dan siap digunakan.")
+		}
 	}
 
 	store := config.GetStore()
@@ -115,27 +125,30 @@ func main() {
 		Handler: mux,
 	}
 
+	var shutdownOnce sync.Once
 	shutdownFunc := func(withWinFsp bool) {
-		log.Println("\nMematikan GDrive Supply...")
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
+		shutdownOnce.Do(func() {
+			log.Println("\nMematikan GDrive Supply...")
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
 
-		// Unmount all running drives cleanly
-		for _, d := range store.GetAllDrives() {
-			if supervisor.IsMounted(d.ID) {
-				log.Printf("Melepas drive %s...", d.DriveLetter)
-				_ = supervisor.UnmountDrive(d.ID)
+			// Unmount all running drives cleanly
+			for _, d := range store.GetAllDrives() {
+				if supervisor.IsMounted(d.ID) {
+					log.Printf("Melepas drive %s...", d.DriveLetter)
+					_ = supervisor.UnmountDrive(d.ID)
+				}
 			}
-		}
 
-		if withWinFsp {
-			log.Println("Menghentikan layanan WinFsp di latar belakang...")
-			_ = exec.Command("net", "stop", "WinFsp.Launcher").Run()
-		}
+			if withWinFsp && runtime.GOOS == "windows" {
+				log.Println("Menghentikan layanan WinFsp di latar belakang...")
+				_ = exec.Command("net", "stop", "WinFsp.Launcher").Run()
+			}
 
-		_ = server.Shutdown(ctx)
-		log.Println("Selesai. Sampai jumpa!")
-		os.Exit(0)
+			_ = server.Shutdown(ctx)
+			log.Println("Selesai. Sampai jumpa!")
+			os.Exit(0)
+		})
 	}
 
 	// Listen for SIGINT / SIGTERM
